@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -61,33 +62,30 @@
 
     <script type="text/babel">
         // ==========================================
-        //  設定エリア (環境に応じて自動で切り替わります)
+        //  設定エリア
         // ==========================================
 
+        /* --- Firebase設定 --- */
         let firebaseConfig;
         let appId;
 
-        // 環境判定: Canvas環境変数が存在するかチェック
+        // このCanvas環境で実行されているか確認
         if (typeof __firebase_config !== 'undefined') {
-            // [A] Canvas環境用 (自動設定)
-            // この環境でプレビューする際は、このブロックが実行されます。
+            // Canvas環境用: 自動設定
             firebaseConfig = JSON.parse(__firebase_config);
             appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-            console.log("Running in Canvas environment.");
         } else {
-            // [B] 公開環境用 (手動設定)
-            // GitHub等で公開する場合は、以下の値をFirebaseコンソールから取得したものに書き換えてください。
+            // ★GitHub等で公開する場合は、以下の設定を書き換えてください★
             firebaseConfig = {
 apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
-  authDomain: "soukaisoumu.firebaseapp.com",
-  projectId: "soukaisoumu",
-  storageBucket: "soukaisoumu.firebasestorage.app",
-  messagingSenderId: "1058784577345",
-  appId: "1:1058784577345:web:e5ceef09b216e7c12703c0",
-  measurementId: "G-14CCWTE9PM"
+  authDomain: "soukaisoumu.firebaseapp.com",
+  projectId: "soukaisoumu",
+  storageBucket: "soukaisoumu.firebasestorage.app",
+  messagingSenderId: "1058784577345",
+  appId: "1:1058784577345:web:e5ceef09b216e7c12703c0",
+  measurementId: "G-14CCWTE9PM"
             };
-            appId = 'general-assembly-chat-public'; 
-            console.log("Running in Public environment (Manual Config).");
+            appId = 'general-assembly-chat-v1';
         }
 
         // ==========================================
@@ -100,14 +98,7 @@ apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
                 firebase.initializeApp(firebaseConfig);
             } catch (error) {
                 console.error("Firebase Initialization Error:", error);
-                document.body.innerHTML = `
-                    <div style="padding:20px;color:red;font-weight:bold;background:#fff;">
-                        <h3>設定エラー</h3>
-                        <p>Firebaseの設定が正しくありません。</p>
-                        <p>GitHub等で公開している場合は、HTMLファイル内の <code>[B] 公開環境用</code> の設定値（apiKeyなど）を書き換えてください。</p>
-                        <pre>${error.message}</pre>
-                    </div>
-                `;
+                document.body.innerHTML = '<div style="padding:20px;color:red;font-weight:bold;">Firebaseの設定エラー: API Key等が正しくありません。<br>GitHub等で利用する場合はコード内の<code>firebaseConfig</code>を修正してください。</div>';
             }
         }
         const app = firebase.app();
@@ -203,6 +194,29 @@ apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
             </IconBase>
         );
 
+        const Trash2 = (props) => (
+            <IconBase {...props}>
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                <line x1="10" y1="11" x2="10" y2="17"></line>
+                <line x1="14" y1="11" x2="14" y2="17"></line>
+            </IconBase>
+        );
+
+        const Eye = (props) => (
+            <IconBase {...props}>
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+            </IconBase>
+        );
+
+        const EyeOff = (props) => (
+            <IconBase {...props}>
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+            </IconBase>
+        );
+
         // --- Helper Functions ---
         const generatePassword = () => Math.random().toString(36).slice(-6).toUpperCase();
         
@@ -216,7 +230,18 @@ apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
             const [myName, setMyName] = React.useState('');
             const [staffIndex, setStaffIndex] = React.useState(null); // For Venue Staff (0-5)
             const [alertActive, setAlertActive] = React.useState(false);
+            const [errorMsg, setErrorMsg] = React.useState(''); 
             
+            // Delete Chat Manager State
+            const [showDeleteModal, setShowDeleteModal] = React.useState(false);
+            const [otherSessions, setOtherSessions] = React.useState([]);
+            const [selectedDeleteIds, setSelectedDeleteIds] = React.useState([]);
+            const [masterPassInput, setMasterPassInput] = React.useState('');
+            const [showMasterPass, setShowMasterPass] = React.useState(false);
+            // [追加] 削除プロセス管理用のState
+            const [deleteStep, setDeleteStep] = React.useState('selection'); // selection, confirming, processing, result
+            const [deleteMessage, setDeleteMessage] = React.useState(''); // エラーや完了メッセージ表示用
+
             // Voting State
             const [voteState, setVoteState] = React.useState({
                 active: false,
@@ -247,20 +272,17 @@ apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
             React.useEffect(() => {
                 const initAuth = async () => {
                     try {
-                        // [環境分岐] Canvas環境変数がある場合はカスタムトークンを使用
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                             await auth.signInWithCustomToken(__initial_auth_token);
                         } else {
-                            // 公開環境やフォールバックとして匿名認証
                             await auth.signInAnonymously();
                         }
                     } catch (error) {
                         console.error("Authentication Error:", error);
                         if (error.code === 'auth/operation-not-allowed') {
-                            alert("エラー: Firebase Consoleで「匿名(Anonymous)認証」を有効にしてください。");
+                            setErrorMsg("エラー: Firebase Consoleで「匿名(Anonymous)認証」を有効にしてください。");
                         } else {
-                            // エラーでもアラートを出さずにコンソールログのみにする（初期化タイミングの問題を回避）
-                            console.warn("Auth check failed or delayed.");
+                            setErrorMsg(`認証エラーが発生しました: ${error.message}`);
                         }
                     }
                 };
@@ -281,6 +303,10 @@ apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
                         setSessionData(prev => ({ ...prev, ...data }));
                         setVoteState(data.voteState || { active: false, staffInputs: {}, lastQuorums: {} });
                         setAlertActive(data.alertActive || false);
+                    } else {
+                        // セッションが削除された場合のハンドリング
+                        alert('このチャットは削除されました。');
+                        window.location.reload();
                     }
                 }, err => console.error(err));
 
@@ -300,61 +326,74 @@ apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
             // --- Actions: Session Management ---
 
             const createSession = async () => {
-                if (!chatNameInput) return;
+                setErrorMsg('');
+                if (!chatNameInput) {
+                    setErrorMsg('チャット名を入力してください。');
+                    return;
+                }
                 const sessionId = chatNameInput; 
-                const mainPassword = generatePassword();
                 
-                const initialData = {
-                    id: sessionId,
-                    name: chatNameInput,
-                    mainPassword: mainPassword,
-                    venueStaffCount: 4, 
-                    venueStaffPasswords: [], 
-                    voteState: {
-                        active: false,
-                        title: '',
-                        type: '議員数の確認',
-                        staffInputs: {},
-                        lastQuorums: {},
-                        totalLastQuorum: 0
-                    },
-                    alertActive: false,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                };
-
                 const sessionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(sessionId);
-                
+
                 try {
+                    const doc = await sessionRef.get();
+                    if (doc.exists) {
+                        setErrorMsg('すでにその名前のチャットは作成されています。別の名前にするか、入室してください。');
+                        return;
+                    }
+
+                    const mainPassword = generatePassword();
+                    const initialData = {
+                        id: sessionId,
+                        name: chatNameInput,
+                        mainPassword: mainPassword,
+                        venueStaffCount: 4, 
+                        venueStaffPasswords: [], 
+                        voteState: {
+                            active: false,
+                            title: '',
+                            type: '議員数の確認',
+                            staffInputs: {},
+                            lastQuorums: {},
+                            totalLastQuorum: 0
+                        },
+                        alertActive: false,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    };
+                    
                     await sessionRef.set(initialData);
                     setSessionData(initialData);
                     setView('lobby');
                 } catch (error) {
                     console.error("Create Session Error:", error);
-                    alert("チャットの作成に失敗しました。Firestoreのセキュリティルールまたは接続を確認してください。\n(公開環境の場合はFirebase Configが正しいか確認してください)");
+                    setErrorMsg("チャットの作成に失敗しました。接続環境などを確認してください。");
                 }
             };
 
             const joinSession = async () => {
-                if (!chatNameInput || !passwordInput) return;
+                setErrorMsg('');
+                if (!chatNameInput || !passwordInput) {
+                    setErrorMsg('チャット名とパスワードを入力してください。');
+                    return;
+                }
+
                 const sessionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(chatNameInput);
                 try {
                     const doc = await sessionRef.get();
 
                     if (!doc.exists) {
-                        alert('チャットが見つかりません');
+                        setErrorMsg('指定されたチャットが見つかりません。');
                         return;
                     }
 
                     const data = doc.data();
                     
-                    // Check Main Password
                     if (data.mainPassword === passwordInput) {
                         setSessionData(data);
                         setView('lobby'); 
                         return;
                     }
 
-                    // Check Staff Passwords
                     const staffIndexFound = data.venueStaffPasswords ? data.venueStaffPasswords.indexOf(passwordInput) : -1;
                     if (staffIndexFound !== -1) {
                         setSessionData(data);
@@ -365,17 +404,103 @@ apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
                         return;
                     }
 
-                    alert('パスワードが間違っています');
+                    setErrorMsg('パスワードが間違っています。');
                 } catch (error) {
                     console.error("Join Session Error:", error);
-                    alert("チャットへの参加に失敗しました。");
+                    setErrorMsg("チャットへの参加に失敗しました。");
+                }
+            };
+
+            // --- Actions: Delete Management ---
+            const openDeleteManager = async () => {
+                setShowDeleteModal(true);
+                setDeleteStep('selection'); // リセット
+                setDeleteMessage('');
+                setOtherSessions([]);
+                setSelectedDeleteIds([]); 
+                setMasterPassInput('');
+                setShowMasterPass(false);
+                
+                try {
+                    const sessionsRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions');
+                    const snapshot = await sessionsRef.get();
+                    const list = [];
+                    snapshot.forEach(doc => {
+                        if (doc.id !== sessionData.id) { 
+                            list.push({ id: doc.id, ...doc.data() });
+                        }
+                    });
+                    setOtherSessions(list);
+                } catch (err) {
+                    console.error(err);
+                    setDeleteMessage('一覧の取得に失敗しました');
+                }
+            };
+
+            const toggleSelectSession = (id) => {
+                setSelectedDeleteIds(prev => {
+                    if (prev.includes(id)) {
+                        return prev.filter(item => item !== id);
+                    } else {
+                        return [...prev, id];
+                    }
+                });
+            };
+
+            // [追加] 削除確認へ進む
+            const initiateDelete = () => {
+                setDeleteMessage('');
+                if (selectedDeleteIds.length === 0) {
+                    setDeleteMessage('削除するチャットを選択してください');
+                    return;
+                }
+                if (masterPassInput !== 'Passwordでいいの') {
+                    setDeleteMessage('マスターパスワードが違います');
+                    return;
+                }
+                setDeleteStep('confirming'); // 確認画面へ
+            };
+
+            // [追加] 削除を実行する
+            const executeDelete = async () => {
+                setDeleteStep('processing'); // 処理中表示
+                try {
+                    const deletePromises = selectedDeleteIds.map(async (sessionId) => {
+                        const sessionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(sessionId);
+                        
+                        // サブコレクション(messages)を先に取得して削除
+                        const messagesSnapshot = await sessionRef.collection('messages').get();
+                        
+                        // バッチサイズ制限(500)を考慮してループ（今回は簡易実装）
+                        const batch = db.batch();
+                        messagesSnapshot.docs.forEach(doc => {
+                            batch.delete(doc.ref);
+                        });
+                        await batch.commit();
+
+                        // 本体を削除
+                        return sessionRef.delete();
+                    });
+                    
+                    await Promise.all(deletePromises);
+                    
+                    setOtherSessions(prev => prev.filter(s => !selectedDeleteIds.includes(s.id)));
+                    setSelectedDeleteIds([]);
+                    setMasterPassInput('');
+                    setDeleteStep('result'); // 完了画面へ
+                    setDeleteMessage('削除が完了しました。');
+                } catch (err) {
+                    console.error(err);
+                    setDeleteStep('selection'); // 選択画面へ戻す
+                    setDeleteMessage('削除に失敗しました: ' + err.message);
                 }
             };
 
             // --- Actions: Lobby ---
             const enterChat = (role) => {
+                setErrorMsg('');
                 if (!myName) {
-                    alert('表示名を入力してください');
+                    setErrorMsg('表示名を入力してください');
                     return;
                 }
                 setMyRole(role);
@@ -554,9 +679,16 @@ apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
                     <div className="min-h-screen flex items-center justify-center p-4">
                         <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
                             <h1 className="text-2xl font-bold mb-6 text-center text-gray-800">総会チャットシステム</h1>
-                            {typeof __firebase_config === 'undefined' && (
+                            
+                            {!window.location.href.includes('googleusercontent') && (
                                 <div className="text-sm text-gray-500 mb-6 bg-yellow-50 p-2 rounded border border-yellow-200">
-                                    ※ 公開環境です。HTML内の<code>firebaseConfig</code>を設定してください。
+                                    ※ ご自身の環境で動かす際は、コード内の <code>firebaseConfig</code> を設定してください。
+                                </div>
+                            )}
+
+                            {errorMsg && (
+                                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+                                    <span className="block sm:inline">{errorMsg}</span>
                                 </div>
                             )}
                             
@@ -613,6 +745,12 @@ apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
                     <div className="min-h-screen flex items-center justify-center p-4">
                         <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
                             <h2 className="text-xl font-bold mb-2">入室設定: {sessionData.name}</h2>
+
+                            {errorMsg && (
+                                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+                                    <span className="block sm:inline">{errorMsg}</span>
+                                </div>
+                            )}
                             
                             <div className="bg-blue-50 border border-blue-200 rounded p-4 mb-6 text-center">
                                 <p className="text-sm text-blue-600 font-bold mb-1">管理者・担当用パスワード</p>
@@ -687,21 +825,17 @@ apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
                         <div className={`flex-1 flex flex-col border-r bg-white ${myRole === '会場担当' || myRole === '会場係' ? 'hidden md:flex' : 'flex'}`}>
                             <div className="flex-1 overflow-y-auto p-4 space-y-3">
                                 {messages.map(msg => {
-                                    // フィルタリング: プライベートログは対象者のみ表示
                                     if (msg.isPrivateLog) {
                                         if (myRole !== '会場係' || staffIndex !== msg.targetStaffIndex) {
                                             return null;
                                         }
                                     }
-
-                                    // 会場係の場合、システム以外の管理職メッセージを非表示
                                     if (myRole === '会場係') {
                                         const restrictedRoles = ['副議長', '事務局', '会場担当'];
                                         if (restrictedRoles.includes(msg.senderRole) && !msg.isResult && !msg.isSystemNotice) {
                                             return null;
                                         }
                                     }
-
                                     return (
                                         <div key={msg.id} className={`p-3 rounded-lg max-w-[85%] 
                                             ${msg.senderName === myName ? 'ml-auto bg-blue-100' : 'bg-gray-100'} 
@@ -719,12 +853,12 @@ apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
                             </div>
                             <form onSubmit={sendMessage} className="p-3 border-t flex gap-2">
                                 <input 
-                                    className="flex-1 border rounded p-2"
+                                    className="flex-1 border rounded p-1 text-sm"
                                     value={messageInput}
                                     onChange={e => setMessageInput(e.target.value)}
                                     placeholder="メッセージを入力..."
                                 />
-                                <button className="bg-blue-600 text-white p-2 rounded"><Send size={20}/></button>
+                                <button className="bg-gray-600 text-white px-3 py-1 rounded text-sm">送</button>
                             </form>
                         </div>
 
@@ -880,103 +1014,9 @@ apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
                             </div>
                         )}
 
-                        {/* B. Venue Staff View */}
-                        {myRole === '会場係' && (
-                            <div className="w-full md:w-1/2 bg-white flex flex-col p-4 border-l">
-                                <h3 className="font-bold text-gray-500 mb-4 flex items-center gap-2">
-                                    <Hand size={18}/> 会場係 {staffIndex + 1} 入力パネル
-                                </h3>
-
-                                {voteState.active ? (
-                                    <div className="flex-1 flex flex-col justify-center space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                        <div className="bg-blue-50 p-4 rounded-lg border-l-4 border-blue-500">
-                                            <div className="text-sm text-blue-600 font-bold mb-1">{voteState.type}</div>
-                                            <div className="text-2xl font-bold text-gray-800">{voteState.title}</div>
-                                            {voteState.isTwoThirds && (
-                                                <div className="mt-2 text-red-600 font-bold text-sm bg-red-50 p-2 rounded">
-                                                    ※ この議題は議長も議員数に含みます
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        <div className="space-y-2">
-                                            <label className="block font-bold text-gray-700">人数入力</label>
-                                            <div className="flex items-center gap-2">
-                                                <input 
-                                                    type="number" 
-                                                    className="flex-1 p-4 text-3xl text-center border-2 border-blue-300 rounded-lg focus:outline-none focus:border-blue-600"
-                                                    value={staffCountInput}
-                                                    onChange={e => setStaffCountInput(e.target.value)}
-                                                    placeholder="0"
-                                                    autoFocus
-                                                />
-                                                {voteState.type !== '議員数の確認' && (
-                                                    <div className="text-gray-500 text-sm w-20 text-right">
-                                                        <div>母数</div>
-                                                        <div className="text-xl font-bold">
-                                                            / {voteState.lastQuorums ? (voteState.lastQuorums[staffIndex] || 0) : 0}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        <button 
-                                            onClick={submitStaffCount}
-                                            className="w-full bg-blue-600 text-white py-4 rounded-lg text-xl font-bold shadow-lg active:scale-95 transition-transform"
-                                        >
-                                            決定 (送信)
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                                        <RefreshCcw size={48} className="mb-4 opacity-50"/>
-                                        <p>次の指示を待機中...</p>
-                                    </div>
-                                )}
-                                
-                                <div className="mt-auto pt-4 border-t">
-                                    <h4 className="font-bold mb-2">チャット</h4>
-                                    <div className="h-48 overflow-y-auto bg-gray-50 p-2 rounded border mb-2">
-                                        {messages.slice(-5).map(msg => {
-                                             // フィルタリング: プライベートログは対象者のみ表示（コピー）
-                                             if (msg.isPrivateLog) {
-                                                if (myRole !== '会場係' || staffIndex !== msg.targetStaffIndex) {
-                                                    return null;
-                                                }
-                                            }
-
-                                            // 会場係の場合、システム以外の管理職メッセージを非表示
-                                            if (myRole === '会場係') {
-                                                const restrictedRoles = ['副議長', '事務局', '会場担当'];
-                                                if (restrictedRoles.includes(msg.senderRole) && !msg.isResult && !msg.isSystemNotice) {
-                                                    return null;
-                                                }
-                                            }
-
-                                            return (
-                                            <div key={msg.id} className={`text-sm mb-2 ${msg.isLog ? 'italic text-gray-500' : ''} ${msg.isSystemNotice ? 'text-green-700 font-bold' : ''}`}>
-                                                <span className="font-bold text-xs text-gray-500">{msg.senderName}:</span> {msg.text}
-                                            </div>
-                                            );
-                                        })}
-                                    </div>
-                                    <form onSubmit={sendMessage} className="flex gap-2">
-                                        <input 
-                                            className="flex-1 border rounded p-1 text-sm"
-                                            value={messageInput}
-                                            onChange={e => setMessageInput(e.target.value)}
-                                            placeholder="メッセージ..."
-                                        />
-                                        <button className="bg-gray-600 text-white px-3 py-1 rounded text-sm">送</button>
-                                    </form>
-                                </div>
-                            </div>
-                        )}
-
                         {/* C. Vice Chair / Secretariat View (Right side placeholder or specific info) */}
                         {(myRole === '副議長' || myRole === '事務局') && (
-                            <div className="hidden md:block w-1/3 bg-gray-50 p-4 border-l">
+                            <div className="hidden md:block w-1/3 bg-gray-50 p-4 border-l flex flex-col">
                                 <h3 className="font-bold text-gray-500 mb-4">ステータスパネル</h3>
                                 <div className="bg-white p-4 rounded shadow-sm mb-4">
                                     <h4 className="text-sm font-bold text-gray-400 mb-2">現在の定数 (全体)</h4>
@@ -986,7 +1026,7 @@ apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
                                         2/3: {Math.ceil(voteState.totalLastQuorum * (2/3))}
                                     </div>
                                 </div>
-                                <div className="bg-white p-4 rounded shadow-sm">
+                                <div className="bg-white p-4 rounded shadow-sm flex-1 mb-4">
                                     <h4 className="text-sm font-bold text-gray-400 mb-2">最新の集計結果</h4>
                                     {messages.filter(m => m.isResult).slice(-1).map(m => (
                                         <div key={m.id} className="text-sm whitespace-pre-wrap">
@@ -994,10 +1034,159 @@ apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
                                         </div>
                                     ))}
                                 </div>
+
+                                {/* 削除管理ボタン (事務局のみ) */}
+                                {myRole === '事務局' && (
+                                    <div className="mt-auto pt-4 border-t">
+                                        <button 
+                                            onClick={openDeleteManager}
+                                            className="w-full bg-gray-200 text-gray-700 py-2 rounded flex items-center justify-center gap-2 hover:bg-gray-300 text-sm"
+                                        >
+                                            <Trash2 size={16}/> 他のチャットを管理（削除）
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )}
 
                     </div>
+
+                    {/* 削除モーダル */}
+                    {showDeleteModal && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                            <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full m-4">
+                                <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-red-600">
+                                    <Trash2 size={24}/> チャット削除管理
+                                </h3>
+                                
+                                {/* メッセージ表示 */}
+                                {deleteMessage && (
+                                    <div className={`p-3 rounded mb-4 text-sm ${deleteStep === 'result' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                        {deleteMessage}
+                                    </div>
+                                )}
+
+                                {/* STEP 1: 選択 */}
+                                {deleteStep === 'selection' && (
+                                    <div>
+                                        <p className="text-sm text-gray-600 mb-4">
+                                            削除するチャットを選択してください。
+                                        </p>
+                                        <div className="mb-4 max-h-48 overflow-y-auto border rounded p-2 bg-gray-50">
+                                            {otherSessions.length === 0 ? (
+                                                <div className="text-gray-400 text-center py-4">削除可能な他のチャットはありません</div>
+                                            ) : (
+                                                otherSessions.map(s => (
+                                                    <label key={s.id} className="flex items-center gap-2 p-2 hover:bg-white border-b last:border-0 cursor-pointer">
+                                                        <input 
+                                                            type="checkbox" 
+                                                            value={s.id}
+                                                            checked={selectedDeleteIds.includes(s.id)}
+                                                            onChange={() => toggleSelectSession(s.id)}
+                                                        />
+                                                        <div>
+                                                            <div className="font-bold">{s.name}</div>
+                                                            <div className="text-xs text-gray-400">ID: {s.id}</div>
+                                                        </div>
+                                                    </label>
+                                                ))
+                                            )}
+                                        </div>
+
+                                        <div className="mb-4">
+                                            <label className="block text-sm font-bold mb-1">マスターパスワード</label>
+                                            <div className="flex relative items-center">
+                                                <input 
+                                                    type={showMasterPass ? "text" : "password"} 
+                                                    className="w-full border p-2 rounded pr-10"
+                                                    value={masterPassInput}
+                                                    onChange={e => setMasterPassInput(e.target.value)}
+                                                    placeholder="パスワードを入力"
+                                                />
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => setShowMasterPass(!showMasterPass)}
+                                                    className="absolute right-2 text-gray-500 hover:text-gray-700"
+                                                >
+                                                    {showMasterPass ? <EyeOff size={20}/> : <Eye size={20}/>}
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex gap-2 justify-end">
+                                            <button 
+                                                onClick={() => setShowDeleteModal(false)}
+                                                className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+                                            >
+                                                キャンセル
+                                            </button>
+                                            <button 
+                                                onClick={initiateDelete}
+                                                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 font-bold"
+                                            >
+                                                削除確認へ
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* STEP 2: 確認 */}
+                                {deleteStep === 'confirming' && (
+                                    <div className="text-center">
+                                        <div className="text-red-600 font-bold mb-4 text-lg">警告</div>
+                                        <p className="mb-6">
+                                            選択された {selectedDeleteIds.length} 件のチャットを本当に削除しますか？<br/>
+                                            <span className="text-red-600 text-sm font-bold">チャット内のメッセージ履歴も全て完全に削除され、元に戻すことはできません。</span>
+                                        </p>
+                                        <div className="flex gap-4 justify-center">
+                                            <button 
+                                                onClick={() => setDeleteStep('selection')}
+                                                className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+                                            >
+                                                戻る
+                                            </button>
+                                            <button 
+                                                onClick={executeDelete}
+                                                className="px-6 py-2 bg-red-600 text-white rounded hover:bg-red-700 font-bold shadow-lg"
+                                            >
+                                                はい、完全に削除します
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* STEP 3: 処理中 */}
+                                {deleteStep === 'processing' && (
+                                    <div className="text-center py-8">
+                                        <div className="animate-spin h-10 w-10 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+                                        <p>削除中...</p>
+                                    </div>
+                                )}
+
+                                {/* STEP 4: 完了 */}
+                                {deleteStep === 'result' && (
+                                    <div className="text-center">
+                                        <div className="mb-6">
+                                            <CheckSquare size={48} className="text-green-500 mx-auto mb-2"/>
+                                            <p className="font-bold">処理が完了しました</p>
+                                        </div>
+                                        <button 
+                                            onClick={() => setDeleteStep('selection')}
+                                            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                                        >
+                                            戻る
+                                        </button>
+                                        <button 
+                                            onClick={() => setShowDeleteModal(false)}
+                                            className="ml-2 px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+                                        >
+                                            閉じる
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
