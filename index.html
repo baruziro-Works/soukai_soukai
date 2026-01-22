@@ -60,12 +60,59 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // --- Firebase Configuration ---
-        const firebaseConfig = JSON.parse(__firebase_config);
-        const app = firebase.initializeApp(firebaseConfig);
+        // ==========================================
+        //  設定エリア (環境に応じて自動で切り替わります)
+        // ==========================================
+
+        let firebaseConfig;
+        let appId;
+
+        // 環境判定: Canvas環境変数が存在するかチェック
+        if (typeof __firebase_config !== 'undefined') {
+            // [A] Canvas環境用 (自動設定)
+            // この環境でプレビューする際は、このブロックが実行されます。
+            firebaseConfig = JSON.parse(__firebase_config);
+            appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            console.log("Running in Canvas environment.");
+        } else {
+            // [B] 公開環境用 (手動設定)
+            // GitHub等で公開する場合は、以下の値をFirebaseコンソールから取得したものに書き換えてください。
+            firebaseConfig = {
+apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
+  authDomain: "soukaisoumu.firebaseapp.com",
+  projectId: "soukaisoumu",
+  storageBucket: "soukaisoumu.firebasestorage.app",
+  messagingSenderId: "1058784577345",
+  appId: "1:1058784577345:web:e5ceef09b216e7c12703c0",
+  measurementId: "G-14CCWTE9PM"
+            };
+            appId = 'general-assembly-chat-public'; 
+            console.log("Running in Public environment (Manual Config).");
+        }
+
+        // ==========================================
+        //  以下、アプリケーションロジック
+        // ==========================================
+
+        // Initialize Firebase
+        if (!firebase.apps.length) {
+            try {
+                firebase.initializeApp(firebaseConfig);
+            } catch (error) {
+                console.error("Firebase Initialization Error:", error);
+                document.body.innerHTML = `
+                    <div style="padding:20px;color:red;font-weight:bold;background:#fff;">
+                        <h3>設定エラー</h3>
+                        <p>Firebaseの設定が正しくありません。</p>
+                        <p>GitHub等で公開している場合は、HTMLファイル内の <code>[B] 公開環境用</code> の設定値（apiKeyなど）を書き換えてください。</p>
+                        <pre>${error.message}</pre>
+                    </div>
+                `;
+            }
+        }
+        const app = firebase.app();
         const auth = firebase.auth();
         const db = firebase.firestore();
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
         // --- Icons (Inline SVG Components) ---
         
@@ -176,8 +223,8 @@
                 title: '',
                 type: '議員数の確認',
                 isTwoThirds: false,
-                staffInputs: {}, // { 0: 10, 1: 5 ... }
-                lastQuorums: {}, // { 0: 40, 1: 30 ... } 保存された前回の定数
+                staffInputs: {}, 
+                lastQuorums: {}, 
                 totalLastQuorum: 0
             });
 
@@ -190,7 +237,7 @@
             const [vmStaffCount, setVmStaffCount] = React.useState(4);
             const [vmTitleInput, setVmTitleInput] = React.useState(''); 
             const [vmVoteTitle, setVmVoteTitle] = React.useState(''); 
-            const [vmVoteType, setVmVoteType] = React.useState(null); // [変更] 初期値をnullにして未選択状態にする
+            const [vmVoteType, setVmVoteType] = React.useState(null); 
             const [vmIsTwoThirds, setVmIsTwoThirds] = React.useState(false);
 
             // Staff Input State
@@ -199,10 +246,22 @@
             // --- Authentication & Initialization ---
             React.useEffect(() => {
                 const initAuth = async () => {
-                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                        await auth.signInWithCustomToken(__initial_auth_token);
-                    } else {
-                        await auth.signInAnonymously();
+                    try {
+                        // [環境分岐] Canvas環境変数がある場合はカスタムトークンを使用
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await auth.signInWithCustomToken(__initial_auth_token);
+                        } else {
+                            // 公開環境やフォールバックとして匿名認証
+                            await auth.signInAnonymously();
+                        }
+                    } catch (error) {
+                        console.error("Authentication Error:", error);
+                        if (error.code === 'auth/operation-not-allowed') {
+                            alert("エラー: Firebase Consoleで「匿名(Anonymous)認証」を有効にしてください。");
+                        } else {
+                            // エラーでもアラートを出さずにコンソールログのみにする（初期化タイミングの問題を回避）
+                            console.warn("Auth check failed or delayed.");
+                        }
                     }
                 };
                 initAuth();
@@ -242,15 +301,15 @@
 
             const createSession = async () => {
                 if (!chatNameInput) return;
-                const sessionId = chatNameInput; // ID is chat name for simplicity in this requirement
+                const sessionId = chatNameInput; 
                 const mainPassword = generatePassword();
                 
                 const initialData = {
                     id: sessionId,
                     name: chatNameInput,
                     mainPassword: mainPassword,
-                    venueStaffCount: 4, // Default
-                    venueStaffPasswords: [], // To be generated by Venue Manager or initialized here
+                    venueStaffCount: 4, 
+                    venueStaffPasswords: [], 
                     voteState: {
                         active: false,
                         title: '',
@@ -265,42 +324,52 @@
 
                 const sessionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(sessionId);
                 
-                await sessionRef.set(initialData);
-                setSessionData(initialData);
-                setView('lobby');
+                try {
+                    await sessionRef.set(initialData);
+                    setSessionData(initialData);
+                    setView('lobby');
+                } catch (error) {
+                    console.error("Create Session Error:", error);
+                    alert("チャットの作成に失敗しました。Firestoreのセキュリティルールまたは接続を確認してください。\n(公開環境の場合はFirebase Configが正しいか確認してください)");
+                }
             };
 
             const joinSession = async () => {
                 if (!chatNameInput || !passwordInput) return;
                 const sessionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(chatNameInput);
-                const doc = await sessionRef.get();
+                try {
+                    const doc = await sessionRef.get();
 
-                if (!doc.exists) {
-                    alert('チャットが見つかりません');
-                    return;
+                    if (!doc.exists) {
+                        alert('チャットが見つかりません');
+                        return;
+                    }
+
+                    const data = doc.data();
+                    
+                    // Check Main Password
+                    if (data.mainPassword === passwordInput) {
+                        setSessionData(data);
+                        setView('lobby'); 
+                        return;
+                    }
+
+                    // Check Staff Passwords
+                    const staffIndexFound = data.venueStaffPasswords ? data.venueStaffPasswords.indexOf(passwordInput) : -1;
+                    if (staffIndexFound !== -1) {
+                        setSessionData(data);
+                        setMyRole('会場係');
+                        setMyName(`会場係 ${staffIndexFound + 1}`);
+                        setStaffIndex(staffIndexFound);
+                        setView('chat'); 
+                        return;
+                    }
+
+                    alert('パスワードが間違っています');
+                } catch (error) {
+                    console.error("Join Session Error:", error);
+                    alert("チャットへの参加に失敗しました。");
                 }
-
-                const data = doc.data();
-                
-                // Check Main Password (Vice Chair, Secretariat, Venue Manager)
-                if (data.mainPassword === passwordInput) {
-                    setSessionData(data);
-                    setView('lobby'); // Go to role selection
-                    return;
-                }
-
-                // Check Staff Passwords
-                const staffIndexFound = data.venueStaffPasswords ? data.venueStaffPasswords.indexOf(passwordInput) : -1;
-                if (staffIndexFound !== -1) {
-                    setSessionData(data);
-                    setMyRole('会場係');
-                    setMyName(`会場係 ${staffIndexFound + 1}`);
-                    setStaffIndex(staffIndexFound);
-                    setView('chat'); // Skip lobby for staff
-                    return;
-                }
-
-                alert('パスワードが間違っています');
             };
 
             // --- Actions: Lobby ---
@@ -337,7 +406,6 @@
             
             const confirmTitle = () => {
                 setVmVoteTitle(vmTitleInput);
-                // 入力欄はクリアしない（ご要望：入力してあるものが、設定されたままになるように）
             };
 
             const startVote = async () => {
@@ -346,7 +414,6 @@
                     alert('タイトルが確定されていません。「タイトルを変更」ボタンを押して確定してください。');
                     return;
                 }
-                // [追加] タイプ未選択チェック
                 if (!vmVoteType) {
                     alert('「議員数の確認」「表決」などの種類を選択してください。');
                     return;
@@ -362,12 +429,11 @@
                     'voteState.staffInputs': {} 
                 });
 
-                // [変更] 入力要求のログを1行に短縮（改行なし）
                 const messagesRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(sessionData.id).collection('messages');
                 await messagesRef.add({
                     senderName: 'システム',
                     senderRole: 'admin',
-                    text: `【受付開始】${vmVoteTitle} (${vmVoteType})`, // 1行で表示
+                    text: `【受付開始】${vmVoteTitle} (${vmVoteType})`, 
                     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                     isSystemNotice: true
                 });
@@ -380,12 +446,10 @@
 
                 const sessionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(sessionData.id);
                 
-                // Firestore update
                 await sessionRef.update({
                     [`voteState.staffInputs.${staffIndex}`]: val
                 });
 
-                // [変更] ログをチャットに残す（自分だけに表示されるプライベートログとして保存）
                 const messagesRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(sessionData.id).collection('messages');
                 await messagesRef.add({
                     senderName: myName,
@@ -393,8 +457,8 @@
                     text: `「${voteState.title} ${voteState.type}」を「${val}」で送信済み。`,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                     isLog: true, 
-                    isPrivateLog: true, // [追加] プライベートログフラグ
-                    targetStaffIndex: staffIndex // [追加] 表示対象者のインデックス
+                    isPrivateLog: true, 
+                    targetStaffIndex: staffIndex 
                 });
 
                 alert('送信しました');
@@ -408,14 +472,12 @@
                 let totalCount = 0;
                 Object.values(voteState.staffInputs || {}).forEach(v => totalCount += v);
 
-                // Prepare message components
                 const title = `【${voteState.type}】${voteState.title}`;
                 let resultText = "";
                 let denominator = 0;
 
-                // Update lastQuorums if this was a Quorum Check
                 const updates = {
-                    'voteState.active': false // Close vote
+                    'voteState.active': false 
                 };
 
                 if (voteState.type === '議員数の確認') {
@@ -454,7 +516,6 @@
                 const sessionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(sessionData.id);
                 await sessionRef.update(updates);
                 
-                // [追加] 確定時に選択状態をリセット
                 setVmVoteType(null);
             };
 
@@ -493,6 +554,11 @@
                     <div className="min-h-screen flex items-center justify-center p-4">
                         <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
                             <h1 className="text-2xl font-bold mb-6 text-center text-gray-800">総会チャットシステム</h1>
+                            {typeof __firebase_config === 'undefined' && (
+                                <div className="text-sm text-gray-500 mb-6 bg-yellow-50 p-2 rounded border border-yellow-200">
+                                    ※ 公開環境です。HTML内の<code>firebaseConfig</code>を設定してください。
+                                </div>
+                            )}
                             
                             <div className="space-y-4">
                                 <div className="border-b pb-4">
@@ -583,7 +649,6 @@
             }
 
             // 3. Main Chat View
-            // [変更] 激しい点滅クラスへの変更
             const isFlashing = myRole === '副議長' && alertActive;
             const bgClass = isFlashing ? 'animate-flash-severe' : 'bg-gray-100';
 
@@ -622,17 +687,16 @@
                         <div className={`flex-1 flex flex-col border-r bg-white ${myRole === '会場担当' || myRole === '会場係' ? 'hidden md:flex' : 'flex'}`}>
                             <div className="flex-1 overflow-y-auto p-4 space-y-3">
                                 {messages.map(msg => {
-                                    // [変更] フィルタリング: プライベートログは対象者のみ表示
+                                    // フィルタリング: プライベートログは対象者のみ表示
                                     if (msg.isPrivateLog) {
                                         if (myRole !== '会場係' || staffIndex !== msg.targetStaffIndex) {
                                             return null;
                                         }
                                     }
 
-                                    // [追加] 会場係の場合、特定のロールからの通常のメッセージを非表示にする
+                                    // 会場係の場合、システム以外の管理職メッセージを非表示
                                     if (myRole === '会場係') {
                                         const restrictedRoles = ['副議長', '事務局', '会場担当'];
-                                        // システムメッセージ(isResult, isSystemNotice)以外で、かつrestrictedRolesからの発言は非表示
                                         if (restrictedRoles.includes(msg.senderRole) && !msg.isResult && !msg.isSystemNotice) {
                                             return null;
                                         }
@@ -697,7 +761,7 @@
                                     <h3 className="font-bold flex items-center gap-2 mb-4"><CheckSquare size={18}/> 表決コントロール</h3>
                                     
                                     <div className="space-y-3 mb-4">
-                                        {/* [変更] タイトル入力と確定UI */}
+                                        {/* タイトル入力と確定UI */}
                                         <div className="bg-gray-100 p-3 rounded">
                                             <label className="text-xs font-bold text-gray-500 mb-1 block">次回送信タイトル</label>
                                             <div className="flex gap-2">
@@ -741,7 +805,7 @@
 
                                         <button 
                                             onClick={startVote}
-                                            disabled={!vmVoteType || !vmVoteTitle} // [変更] 両方設定されていないと無効
+                                            disabled={!vmVoteType || !vmVoteTitle} 
                                             className={`w-full py-3 rounded font-bold shadow transition-colors ${
                                                 (!vmVoteType || !vmVoteTitle) 
                                                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
@@ -784,7 +848,7 @@
                                                     <td className="p-2 text-red-600">
                                                         {(() => {
                                                             const currentTotal = Object.values(voteState.staffInputs || {}).reduce((a,b) => a+b, 0);
-                                                            // [追加] リアルタイム％表示
+                                                            // リアルタイム％表示
                                                             if (voteState.type !== '議員数の確認' && voteState.totalLastQuorum > 0) {
                                                                 const pct = ((currentTotal / voteState.totalLastQuorum) * 100).toFixed(1);
                                                                 return (
@@ -875,14 +939,14 @@
                                     <h4 className="font-bold mb-2">チャット</h4>
                                     <div className="h-48 overflow-y-auto bg-gray-50 p-2 rounded border mb-2">
                                         {messages.slice(-5).map(msg => {
-                                             // [変更] フィルタリング: プライベートログは対象者のみ表示（コピー）
+                                             // フィルタリング: プライベートログは対象者のみ表示（コピー）
                                              if (msg.isPrivateLog) {
                                                 if (myRole !== '会場係' || staffIndex !== msg.targetStaffIndex) {
                                                     return null;
                                                 }
                                             }
 
-                                            // [追加] 会場係の場合、システム以外の管理職メッセージを非表示
+                                            // 会場係の場合、システム以外の管理職メッセージを非表示
                                             if (myRole === '会場係') {
                                                 const restrictedRoles = ['副議長', '事務局', '会場担当'];
                                                 if (restrictedRoles.includes(msg.senderRole) && !msg.isResult && !msg.isSystemNotice) {
