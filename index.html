@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -238,9 +237,8 @@ apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
             const [selectedDeleteIds, setSelectedDeleteIds] = React.useState([]);
             const [masterPassInput, setMasterPassInput] = React.useState('');
             const [showMasterPass, setShowMasterPass] = React.useState(false);
-            // [追加] 削除プロセス管理用のState
-            const [deleteStep, setDeleteStep] = React.useState('selection'); // selection, confirming, processing, result
-            const [deleteMessage, setDeleteMessage] = React.useState(''); // エラーや完了メッセージ表示用
+            const [deleteStep, setDeleteStep] = React.useState('selection'); 
+            const [deleteMessage, setDeleteMessage] = React.useState(''); 
 
             // Voting State
             const [voteState, setVoteState] = React.useState({
@@ -304,7 +302,6 @@ apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
                         setVoteState(data.voteState || { active: false, staffInputs: {}, lastQuorums: {} });
                         setAlertActive(data.alertActive || false);
                     } else {
-                        // セッションが削除された場合のハンドリング
                         alert('このチャットは削除されました。');
                         window.location.reload();
                     }
@@ -414,7 +411,7 @@ apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
             // --- Actions: Delete Management ---
             const openDeleteManager = async () => {
                 setShowDeleteModal(true);
-                setDeleteStep('selection'); // リセット
+                setDeleteStep('selection'); 
                 setDeleteMessage('');
                 setOtherSessions([]);
                 setSelectedDeleteIds([]); 
@@ -447,7 +444,6 @@ apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
                 });
             };
 
-            // [追加] 削除確認へ進む
             const initiateDelete = () => {
                 setDeleteMessage('');
                 if (selectedDeleteIds.length === 0) {
@@ -458,27 +454,23 @@ apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
                     setDeleteMessage('マスターパスワードが違います');
                     return;
                 }
-                setDeleteStep('confirming'); // 確認画面へ
+                setDeleteStep('confirming'); 
             };
 
-            // [追加] 削除を実行する
             const executeDelete = async () => {
-                setDeleteStep('processing'); // 処理中表示
+                setDeleteStep('processing'); 
                 try {
                     const deletePromises = selectedDeleteIds.map(async (sessionId) => {
                         const sessionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(sessionId);
                         
-                        // サブコレクション(messages)を先に取得して削除
                         const messagesSnapshot = await sessionRef.collection('messages').get();
                         
-                        // バッチサイズ制限(500)を考慮してループ（今回は簡易実装）
                         const batch = db.batch();
                         messagesSnapshot.docs.forEach(doc => {
                             batch.delete(doc.ref);
                         });
                         await batch.commit();
 
-                        // 本体を削除
                         return sessionRef.delete();
                     });
                     
@@ -487,11 +479,11 @@ apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
                     setOtherSessions(prev => prev.filter(s => !selectedDeleteIds.includes(s.id)));
                     setSelectedDeleteIds([]);
                     setMasterPassInput('');
-                    setDeleteStep('result'); // 完了画面へ
+                    setDeleteStep('result'); 
                     setDeleteMessage('削除が完了しました。');
                 } catch (err) {
                     console.error(err);
-                    setDeleteStep('selection'); // 選択画面へ戻す
+                    setDeleteStep('selection'); 
                     setDeleteMessage('削除に失敗しました: ' + err.message);
                 }
             };
@@ -1010,6 +1002,100 @@ apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
                                             </button>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* B. Venue Staff View (Missing in previous, restored here) */}
+                        {myRole === '会場係' && (
+                            <div className="w-full md:w-1/2 bg-white flex flex-col p-4 border-l">
+                                <h3 className="font-bold text-gray-500 mb-4 flex items-center gap-2">
+                                    <Hand size={18}/> 会場係 {staffIndex + 1} 入力パネル
+                                </h3>
+
+                                {voteState.active ? (
+                                    <div className="flex-1 flex flex-col justify-center space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                        <div className="bg-blue-50 p-4 rounded-lg border-l-4 border-blue-500">
+                                            <div className="text-sm text-blue-600 font-bold mb-1">{voteState.type}</div>
+                                            <div className="text-2xl font-bold text-gray-800">{voteState.title}</div>
+                                            {voteState.isTwoThirds && (
+                                                <div className="mt-2 text-red-600 font-bold text-sm bg-red-50 p-2 rounded">
+                                                    ※ この議題は議長も議員数に含みます
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="block font-bold text-gray-700">人数入力</label>
+                                            <div className="flex items-center gap-2">
+                                                <input 
+                                                    type="number" 
+                                                    className="flex-1 p-4 text-3xl text-center border-2 border-blue-300 rounded-lg focus:outline-none focus:border-blue-600"
+                                                    value={staffCountInput}
+                                                    onChange={e => setStaffCountInput(e.target.value)}
+                                                    placeholder="0"
+                                                    autoFocus
+                                                />
+                                                {voteState.type !== '議員数の確認' && (
+                                                    <div className="text-gray-500 text-sm w-20 text-right">
+                                                        <div>母数</div>
+                                                        <div className="text-xl font-bold">
+                                                            / {voteState.lastQuorums ? (voteState.lastQuorums[staffIndex] || 0) : 0}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <button 
+                                            onClick={submitStaffCount}
+                                            className="w-full bg-blue-600 text-white py-4 rounded-lg text-xl font-bold shadow-lg active:scale-95 transition-transform"
+                                        >
+                                            決定 (送信)
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+                                        <RefreshCcw size={48} className="mb-4 opacity-50"/>
+                                        <p>次の指示を待機中...</p>
+                                    </div>
+                                )}
+                                
+                                <div className="mt-auto pt-4 border-t">
+                                    <h4 className="font-bold mb-2">チャット</h4>
+                                    <div className="h-48 overflow-y-auto bg-gray-50 p-2 rounded border mb-2">
+                                        {messages.slice(-5).map(msg => {
+                                             // フィルタリング: プライベートログは対象者のみ表示
+                                             if (msg.isPrivateLog) {
+                                                if (myRole !== '会場係' || staffIndex !== msg.targetStaffIndex) {
+                                                    return null;
+                                                }
+                                            }
+
+                                            // 会場係の場合、システム以外の管理職メッセージを非表示
+                                            if (myRole === '会場係') {
+                                                const restrictedRoles = ['副議長', '事務局', '会場担当'];
+                                                if (restrictedRoles.includes(msg.senderRole) && !msg.isResult && !msg.isSystemNotice) {
+                                                    return null;
+                                                }
+                                            }
+
+                                            return (
+                                            <div key={msg.id} className={`text-sm mb-2 ${msg.isLog ? 'italic text-gray-500' : ''} ${msg.isSystemNotice ? 'text-green-700 font-bold' : ''}`}>
+                                                <span className="font-bold text-xs text-gray-500">{msg.senderName}:</span> {msg.text}
+                                            </div>
+                                            );
+                                        })}
+                                    </div>
+                                    <form onSubmit={sendMessage} className="flex gap-2">
+                                        <input 
+                                            className="flex-1 border rounded p-1 text-sm"
+                                            value={messageInput}
+                                            onChange={e => setMessageInput(e.target.value)}
+                                            placeholder="メッセージ..."
+                                        />
+                                        <button className="bg-gray-600 text-white px-3 py-1 rounded text-sm">送</button>
+                                    </form>
                                 </div>
                             </div>
                         )}
