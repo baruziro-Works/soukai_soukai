@@ -1,1284 +1,324 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>総会運営チャットシステム</title>
-    
-    <!-- React & ReactDOM -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    
-    <!-- Babel -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Firebase SDKs (Compat version needed for window.firebase) -->
-    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore-compat.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>自動ふりがな（ルビ）付与ツール</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', 'sans-serif']
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    body {
+      font-family: Inter, "Noto Sans JP", "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif;
+    }
 
-    <style>
-        body { font-family: 'Noto Sans JP', sans-serif; background-color: #f3f4f6; }
-        
-        /* 激しい点滅アニメーション（副議長通知用）: 赤 -> 黄 -> 白 */
-        @keyframes flash-severe {
-            0% { background-color: #ef4444; }   /* Red */
-            33% { background-color: #facc15; }  /* Yellow */
-            66% { background-color: #ffffff; }  /* White */
-            100% { background-color: #ef4444; } /* Red */
-        }
-        
-        /* ボタン等の拡大縮小アニメーション */
-        @keyframes pulse-scale {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-        }
+    ruby {
+      ruby-position: over;
+    }
 
-        .animate-flash-severe {
-            animation: flash-severe 0.3s infinite; /* かなり速く */
-            border: 8px solid #b91c1c; /* 赤枠で強調 */
-        }
+    rt {
+      font-size: 0.58em;
+      color: #2563eb;
+      user-select: text;
+    }
 
-        .animate-pulse-scale {
-            animation: pulse-scale 0.5s infinite;
-        }
+    #outputArea:empty::before {
+      content: "ここにルビ付きテキストが表示されます。表示後はこのエリア内で直接編集できます。";
+      color: #94a3b8;
+    }
 
-        /* スクロールバーのカスタマイズ */
-        .scrollbar-hide::-webkit-scrollbar {
-            display: none;
-        }
-        .scrollbar-hide {
-            -ms-overflow-style: none;
-            scrollbar-width: none;
-        }
-    </style>
+    .checker-bg {
+      background-image:
+        linear-gradient(45deg, rgba(59, 130, 246, 0.035) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(59, 130, 246, 0.035) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(59, 130, 246, 0.035) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(59, 130, 246, 0.035) 75%);
+      background-size: 22px 22px;
+      background-position: 0 0, 0 11px, 11px -11px, -11px 0px;
+    }
+  </style>
 </head>
-<body>
-    <div id="root"></div>
+<body class="min-h-screen bg-slate-100 text-slate-800">
+  <div id="loadingScreen" class="fixed inset-0 z-50 flex items-center justify-center bg-white">
+    <div class="rounded-3xl border border-blue-100 bg-white p-10 text-center shadow-2xl shadow-blue-100">
+      <div class="mx-auto mb-5 h-14 w-14 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600"></div>
+      <h1 class="text-xl font-bold text-slate-900">Kuromoji辞書を読み込み中</h1>
+      <p class="mt-2 text-sm text-slate-500">初回は数秒かかることがあります。しばらくお待ちください。</p>
+    </div>
+  </div>
 
-    <script type="text/babel">
-        // ==========================================
-        //  設定エリア
-        // ==========================================
+  <main id="app" class="hidden min-h-screen">
+    <header class="border-b border-blue-100 bg-white/90 backdrop-blur">
+      <div class="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-6 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+        <div>
+          <p class="text-sm font-semibold uppercase tracking-[0.25em] text-blue-600">Ruby Generator</p>
+          <h1 class="mt-2 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">自動ふりがな（ルビ）付与ツール</h1>
+          <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-600">テキスト・Word文書を読み込み、カスタム辞書を優先して漢字にルビを自動付与します。結果は直接編集してWord向けに保存できます。</p>
+        </div>
+        <div id="tokenizerStatus" class="inline-flex items-center rounded-full bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-200">
+          <span class="mr-2 h-2.5 w-2.5 rounded-full bg-emerald-500"></span>辞書読み込み完了
+        </div>
+      </div>
+    </header>
 
-        /* --- Firebase設定 --- */
-        let firebaseConfig;
-        let appId;
+    <section class="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-2 lg:px-8">
+      <div class="space-y-6">
+        <section class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 class="text-lg font-bold text-slate-950">入力エリア</h2>
+              <p class="text-sm text-slate-500">直接入力、または .txt / .docx ファイルを読み込めます。</p>
+            </div>
+            <label class="inline-flex cursor-pointer items-center justify-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 focus-within:ring-4 focus-within:ring-blue-200">
+              原文ファイル読込
+              <input id="sourceFile" type="file" accept=".txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="sr-only" />
+            </label>
+          </div>
+          <textarea id="sourceText" class="min-h-[390px] w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 p-4 text-base leading-8 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100" placeholder="例：今日は総会資料を確認し、議案について説明します。"></textarea>
+        </section>
 
-        // このCanvas環境で実行されているか確認
-        if (typeof __firebase_config !== 'undefined') {
-            // Canvas環境用: 自動設定
-            firebaseConfig = JSON.parse(__firebase_config);
-            appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        <section class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 class="text-lg font-bold text-slate-950">カスタム辞書</h2>
+              <p class="text-sm text-slate-500">1行に「単語,ふりがな」または「単語 ふりがな」。長い単語を優先します。</p>
+            </div>
+            <label class="inline-flex cursor-pointer items-center justify-center rounded-xl bg-slate-800 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-slate-950 focus-within:ring-4 focus-within:ring-slate-200">
+              辞書ファイル追記
+              <input id="dictFile" type="file" accept=".txt,.csv,.docx,text/plain,text/csv,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="sr-only" />
+            </label>
+          </div>
+          <textarea id="customDict" class="min-h-[190px] w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 p-4 font-mono text-sm leading-7 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100" placeholder="例：\n総会資料,そうかいしりょう\n議案 ぎあん"></textarea>
+        </section>
+      </div>
+
+      <div class="space-y-6">
+        <section class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div class="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div>
+              <h2 class="text-lg font-bold text-slate-950">出力エリア</h2>
+              <p class="text-sm text-slate-500">ルビ付きHTMLをリッチテキストとして表示します。直接編集できます。</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button id="generateBtn" class="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-200 disabled:cursor-not-allowed disabled:bg-slate-300">ふりがなを付ける</button>
+              <button id="copyBtn" class="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 transition hover:bg-blue-100 focus:outline-none focus:ring-4 focus:ring-blue-100">コピーする</button>
+              <button id="downloadBtn" class="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-100">Wordとして保存</button>
+            </div>
+          </div>
+          <div id="outputArea" contenteditable="true" class="checker-bg min-h-[640px] overflow-auto rounded-2xl border border-slate-200 bg-white p-5 text-lg leading-10 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"></div>
+        </section>
+        <div id="message" class="hidden rounded-2xl border px-4 py-3 text-sm font-semibold"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let tokenizer = null;
+
+    const sourceText = document.getElementById('sourceText');
+    const customDict = document.getElementById('customDict');
+    const sourceFile = document.getElementById('sourceFile');
+    const dictFile = document.getElementById('dictFile');
+    const outputArea = document.getElementById('outputArea');
+    const generateBtn = document.getElementById('generateBtn');
+    const copyBtn = document.getElementById('copyBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const message = document.getElementById('message');
+
+    const hasKanji = (text) => /[一-龯々〆ヵヶ]/.test(text);
+    const isHiragana = (text) => /^[ぁ-んー]+$/.test(text);
+    const escapeHtml = (text) => text.replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]));
+    const toHiragana = (text) => text.replace(/[ァ-ン]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0x60));
+
+    function showMessage(text, type = 'success') {
+      message.textContent = text;
+      message.className = `rounded-2xl border px-4 py-3 text-sm font-semibold ${type === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`;
+      message.classList.remove('hidden');
+      window.clearTimeout(showMessage.timer);
+      showMessage.timer = window.setTimeout(() => message.classList.add('hidden'), 3200);
+    }
+
+    function parseCustomDictionary(text) {
+      return text.split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith('#'))
+        .map((line) => {
+          const comma = line.match(/^(.+?)[,，]\s*(.+)$/);
+          if (comma) return { word: comma[1].trim(), ruby: comma[2].trim() };
+          const space = line.match(/^(.+?)\s+(.+)$/);
+          if (space) return { word: space[1].trim(), ruby: space[2].trim() };
+          return null;
+        })
+        .filter((entry) => entry && entry.word && entry.ruby)
+        .sort((a, b) => b.word.length - a.word.length);
+    }
+
+    function applyCustomDictionary(text, entries) {
+      const segments = [];
+      let plain = '';
+      let index = 0;
+
+      const flushPlain = () => {
+        if (plain) {
+          segments.push({ type: 'text', value: plain });
+          plain = '';
+        }
+      };
+
+      while (index < text.length) {
+        const found = entries.find((entry) => text.startsWith(entry.word, index));
+        if (found) {
+          flushPlain();
+          segments.push({ type: 'html', value: `<ruby>${escapeHtml(found.word)}<rt>${escapeHtml(found.ruby)}</rt></ruby>` });
+          index += found.word.length;
         } else {
-            // ★GitHub等で公開する場合は、以下の設定を書き換えてください★
-            firebaseConfig = {
-apiKey: "AIzaSyAnHS98h_ihcgvpTs4nHxkAOWWJCaFTWb0",
-  authDomain: "soukaisoumu.firebaseapp.com",
-  projectId: "soukaisoumu",
-  storageBucket: "soukaisoumu.firebasestorage.app",
-  messagingSenderId: "1058784577345",
-  appId: "1:1058784577345:web:e5ceef09b216e7c12703c0",
-  measurementId: "G-14CCWTE9PM"
-            };
-            appId = 'general-assembly-chat-v1';
+          plain += text[index];
+          index += 1;
         }
+      }
+      flushPlain();
+      return segments;
+    }
 
-        // ==========================================
-        //  以下、アプリケーションロジック
-        // ==========================================
+    function rubyForToken(token) {
+      const surface = token.surface_form || '';
+      if (!surface || !hasKanji(surface)) return escapeHtml(surface);
 
-        // Initialize Firebase
-        if (!firebase.apps.length) {
-            try {
-                firebase.initializeApp(firebaseConfig);
-            } catch (error) {
-                console.error("Firebase Initialization Error:", error);
-                document.body.innerHTML = '<div style="padding:20px;color:red;font-weight:bold;">Firebaseの設定エラー: API Key等が正しくありません。<br>GitHub等で利用する場合はコード内の<code>firebaseConfig</code>を修正してください。</div>';
-            }
+      const rawReading = token.reading && token.reading !== '*' ? token.reading : '';
+      const reading = toHiragana(rawReading);
+      if (!reading) return escapeHtml(surface);
+
+      const trailingKana = surface.match(/[ぁ-んー]+$/)?.[0] || '';
+      if (trailingKana && reading.endsWith(trailingKana)) {
+        const base = surface.slice(0, -trailingKana.length);
+        const baseReading = reading.slice(0, -trailingKana.length);
+        if (base && baseReading && hasKanji(base)) {
+          return `<ruby>${escapeHtml(base)}<rt>${escapeHtml(baseReading)}</rt></ruby>${escapeHtml(trailingKana)}`;
         }
-        const app = firebase.app();
-        const auth = firebase.auth();
-        const db = firebase.firestore();
-
-        // --- Icons (Inline SVG Components) ---
-        
-        const IconBase = ({ size = 24, className = "", children }) => (
-            <svg 
-                xmlns="http://www.w3.org/2000/svg" 
-                width={size} 
-                height={size} 
-                viewBox="0 0 24 24" 
-                fill="none" 
-                stroke="currentColor" 
-                strokeWidth="2" 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                className={className}
-            >
-                {children}
-            </svg>
-        );
-
-        const Users = (props) => (
-            <IconBase {...props}>
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                <circle cx="9" cy="7" r="4"></circle>
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-            </IconBase>
-        );
-
-        const CheckSquare = (props) => (
-            <IconBase {...props}>
-                <polyline points="9 11 12 14 22 4"></polyline>
-                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
-            </IconBase>
-        );
-
-        const Bell = (props) => (
-            <IconBase {...props}>
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-            </IconBase>
-        );
-
-        const AlertTriangle = (props) => (
-            <IconBase {...props}>
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                <line x1="12" y1="9" x2="12" y2="13"></line>
-                <line x1="12" y1="17" x2="12.01" y2="17"></line>
-            </IconBase>
-        );
-
-        const LogOut = (props) => (
-            <IconBase {...props}>
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                <polyline points="16 17 21 12 16 7"></polyline>
-                <line x1="21" y1="12" x2="9" y2="12"></line>
-            </IconBase>
-        );
-
-        const Send = (props) => (
-            <IconBase {...props}>
-                <line x1="22" y1="2" x2="11" y2="13"></line>
-                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-            </IconBase>
-        );
-
-        const RefreshCcw = (props) => (
-            <IconBase {...props}>
-                <polyline points="1 4 1 10 7 10"></polyline>
-                <polyline points="23 20 23 14 17 14"></polyline>
-                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path>
-            </IconBase>
-        );
-
-        const Hand = (props) => (
-            <IconBase {...props}>
-                <path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"></path>
-                <path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2"></path>
-                <path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"></path>
-                <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"></path>
-            </IconBase>
-        );
-
-        const Edit3 = (props) => (
-            <IconBase {...props}>
-                <path d="M12 20h9"></path>
-                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
-            </IconBase>
-        );
-
-        const Trash2 = (props) => (
-            <IconBase {...props}>
-                <polyline points="3 6 5 6 21 6"></polyline>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                <line x1="10" y1="11" x2="10" y2="17"></line>
-                <line x1="14" y1="11" x2="14" y2="17"></line>
-            </IconBase>
-        );
-
-        const Eye = (props) => (
-            <IconBase {...props}>
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                <circle cx="12" cy="12" r="3"></circle>
-            </IconBase>
-        );
-
-        const EyeOff = (props) => (
-            <IconBase {...props}>
-                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                <line x1="1" y1="1" x2="23" y2="23"></line>
-            </IconBase>
-        );
-
-        // --- Helper Functions ---
-        const generatePassword = () => Math.random().toString(36).slice(-6).toUpperCase();
-        
-        // --- Main Component ---
-        function App() {
-            const [user, setUser] = React.useState(null);
-            const [view, setView] = React.useState('landing'); // landing, lobby, chat
-            const [sessionData, setSessionData] = React.useState(null);
-            const [messages, setMessages] = React.useState([]);
-            const [myRole, setMyRole] = React.useState('');
-            const [myName, setMyName] = React.useState('');
-            const [staffIndex, setStaffIndex] = React.useState(null); // For Venue Staff (0-5)
-            const [alertActive, setAlertActive] = React.useState(false);
-            const [errorMsg, setErrorMsg] = React.useState(''); 
-            
-            // Delete Chat Manager State
-            const [showDeleteModal, setShowDeleteModal] = React.useState(false);
-            const [otherSessions, setOtherSessions] = React.useState([]);
-            const [selectedDeleteIds, setSelectedDeleteIds] = React.useState([]);
-            const [masterPassInput, setMasterPassInput] = React.useState('');
-            const [showMasterPass, setShowMasterPass] = React.useState(false);
-            const [deleteStep, setDeleteStep] = React.useState('selection'); 
-            const [deleteMessage, setDeleteMessage] = React.useState(''); 
-
-            // Voting State
-            const [voteState, setVoteState] = React.useState({
-                active: false,
-                title: '',
-                type: '議員数の確認',
-                isTwoThirds: false,
-                staffInputs: {}, 
-                lastQuorums: {}, 
-                totalLastQuorum: 0
-            });
-
-            // Input States
-            const [chatNameInput, setChatNameInput] = React.useState('');
-            const [passwordInput, setPasswordInput] = React.useState('');
-            const [messageInput, setMessageInput] = React.useState('');
-            
-            // Venue Manager States
-            const [vmStaffCount, setVmStaffCount] = React.useState(4);
-            const [vmTitleInput, setVmTitleInput] = React.useState(''); 
-            const [vmVoteTitle, setVmVoteTitle] = React.useState(''); 
-            const [vmVoteType, setVmVoteType] = React.useState(null); 
-            const [vmIsTwoThirds, setVmIsTwoThirds] = React.useState(false);
-
-            // Staff Input State
-            const [staffCountInput, setStaffCountInput] = React.useState('');
-
-            // --- Authentication & Initialization ---
-            React.useEffect(() => {
-                const initAuth = async () => {
-                    try {
-                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            await auth.signInWithCustomToken(__initial_auth_token);
-                        } else {
-                            await auth.signInAnonymously();
-                        }
-                    } catch (error) {
-                        console.error("Authentication Error:", error);
-                        if (error.code === 'auth/operation-not-allowed') {
-                            setErrorMsg("エラー: Firebase Consoleで「匿名(Anonymous)認証」を有効にしてください。");
-                        } else {
-                            setErrorMsg(`認証エラーが発生しました: ${error.message}`);
-                        }
-                    }
-                };
-                initAuth();
-                const unsubscribe = auth.onAuthStateChanged(u => setUser(u));
-                return () => unsubscribe();
-            }, []);
-
-            // --- Firestore Listeners ---
-            React.useEffect(() => {
-                if (!user || !sessionData?.id) return;
-
-                // Listen to Session Data
-                const sessionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(sessionData.id);
-                const unsubSession = sessionRef.onSnapshot(doc => {
-                    if (doc.exists) {
-                        const data = doc.data();
-                        setSessionData(prev => ({ ...prev, ...data }));
-                        setVoteState(data.voteState || { active: false, staffInputs: {}, lastQuorums: {} });
-                        setAlertActive(data.alertActive || false);
-                    } else {
-                        alert('このチャットは削除されました。');
-                        window.location.reload();
-                    }
-                }, err => console.error(err));
-
-                // Listen to Messages
-                const messagesRef = sessionRef.collection('messages').orderBy('createdAt', 'asc');
-                const unsubMessages = messagesRef.onSnapshot(snapshot => {
-                    const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                    setMessages(msgs);
-                }, err => console.error(err));
-
-                return () => {
-                    unsubSession();
-                    unsubMessages();
-                };
-            }, [user, sessionData?.id]);
-
-            // --- Actions: Session Management ---
-
-            const createSession = async () => {
-                setErrorMsg('');
-                if (!chatNameInput) {
-                    setErrorMsg('チャット名を入力してください。');
-                    return;
-                }
-                const sessionId = chatNameInput; 
-                
-                const sessionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(sessionId);
-
-                try {
-                    const doc = await sessionRef.get();
-                    if (doc.exists) {
-                        setErrorMsg('すでにその名前のチャットは作成されています。別の名前にするか、入室してください。');
-                        return;
-                    }
-
-                    const mainPassword = generatePassword();
-                    const initialData = {
-                        id: sessionId,
-                        name: chatNameInput,
-                        mainPassword: mainPassword,
-                        venueStaffCount: 4, 
-                        venueStaffPasswords: [], 
-                        voteState: {
-                            active: false,
-                            title: '',
-                            type: '議員数の確認',
-                            staffInputs: {},
-                            lastQuorums: {},
-                            totalLastQuorum: 0
-                        },
-                        alertActive: false,
-                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                    };
-                    
-                    await sessionRef.set(initialData);
-                    setSessionData(initialData);
-                    setView('lobby');
-                } catch (error) {
-                    console.error("Create Session Error:", error);
-                    setErrorMsg("チャットの作成に失敗しました。接続環境などを確認してください。");
-                }
-            };
-
-            const joinSession = async () => {
-                setErrorMsg('');
-                if (!chatNameInput || !passwordInput) {
-                    setErrorMsg('チャット名とパスワードを入力してください。');
-                    return;
-                }
-
-                const sessionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(chatNameInput);
-                try {
-                    const doc = await sessionRef.get();
-
-                    if (!doc.exists) {
-                        setErrorMsg('指定されたチャットが見つかりません。');
-                        return;
-                    }
-
-                    const data = doc.data();
-                    
-                    if (data.mainPassword === passwordInput) {
-                        setSessionData(data);
-                        setView('lobby'); 
-                        return;
-                    }
-
-                    const staffIndexFound = data.venueStaffPasswords ? data.venueStaffPasswords.indexOf(passwordInput) : -1;
-                    if (staffIndexFound !== -1) {
-                        setSessionData(data);
-                        setMyRole('会場係');
-                        setMyName(`会場係 ${staffIndexFound + 1}`);
-                        setStaffIndex(staffIndexFound);
-                        setView('chat'); 
-                        return;
-                    }
-
-                    setErrorMsg('パスワードが間違っています。');
-                } catch (error) {
-                    console.error("Join Session Error:", error);
-                    setErrorMsg("チャットへの参加に失敗しました。");
-                }
-            };
-
-            // --- Actions: Delete Management ---
-            const openDeleteManager = async () => {
-                setShowDeleteModal(true);
-                setDeleteStep('selection'); 
-                setDeleteMessage('');
-                setOtherSessions([]);
-                setSelectedDeleteIds([]); 
-                setMasterPassInput('');
-                setShowMasterPass(false);
-                
-                try {
-                    const sessionsRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions');
-                    const snapshot = await sessionsRef.get();
-                    const list = [];
-                    snapshot.forEach(doc => {
-                        if (doc.id !== sessionData.id) { 
-                            list.push({ id: doc.id, ...doc.data() });
-                        }
-                    });
-                    setOtherSessions(list);
-                } catch (err) {
-                    console.error(err);
-                    setDeleteMessage('一覧の取得に失敗しました');
-                }
-            };
-
-            const toggleSelectSession = (id) => {
-                setSelectedDeleteIds(prev => {
-                    if (prev.includes(id)) {
-                        return prev.filter(item => item !== id);
-                    } else {
-                        return [...prev, id];
-                    }
-                });
-            };
-
-            const initiateDelete = () => {
-                setDeleteMessage('');
-                if (selectedDeleteIds.length === 0) {
-                    setDeleteMessage('削除するチャットを選択してください');
-                    return;
-                }
-                if (masterPassInput !== 'Passwordでいいの') {
-                    setDeleteMessage('マスターパスワードが違います');
-                    return;
-                }
-                setDeleteStep('confirming'); 
-            };
-
-            const executeDelete = async () => {
-                setDeleteStep('processing'); 
-                try {
-                    const deletePromises = selectedDeleteIds.map(async (sessionId) => {
-                        const sessionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(sessionId);
-                        
-                        const messagesSnapshot = await sessionRef.collection('messages').get();
-                        
-                        const batch = db.batch();
-                        messagesSnapshot.docs.forEach(doc => {
-                            batch.delete(doc.ref);
-                        });
-                        await batch.commit();
-
-                        return sessionRef.delete();
-                    });
-                    
-                    await Promise.all(deletePromises);
-                    
-                    setOtherSessions(prev => prev.filter(s => !selectedDeleteIds.includes(s.id)));
-                    setSelectedDeleteIds([]);
-                    setMasterPassInput('');
-                    setDeleteStep('result'); 
-                    setDeleteMessage('削除が完了しました。');
-                } catch (err) {
-                    console.error(err);
-                    setDeleteStep('selection'); 
-                    setDeleteMessage('削除に失敗しました: ' + err.message);
-                }
-            };
-
-            // --- Actions: Lobby ---
-            const enterChat = (role) => {
-                setErrorMsg('');
-                if (!myName) {
-                    setErrorMsg('表示名を入力してください');
-                    return;
-                }
-                setMyRole(role);
-                setView('chat');
-            };
-
-            // --- Actions: Venue Manager Settings ---
-            const updateStaffSettings = async () => {
-                if (!sessionData) return;
-                const count = Math.min(6, Math.max(1, vmStaffCount));
-                const newPasswords = [];
-                for(let i=0; i<count; i++) {
-                    if (sessionData.venueStaffPasswords && sessionData.venueStaffPasswords[i]) {
-                        newPasswords.push(sessionData.venueStaffPasswords[i]);
-                    } else {
-                        newPasswords.push(generatePassword());
-                    }
-                }
-
-                const sessionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(sessionData.id);
-                await sessionRef.update({
-                    venueStaffCount: count,
-                    venueStaffPasswords: newPasswords
-                });
-            };
-
-            // --- Actions: Voting Flow ---
-            
-            const confirmTitle = () => {
-                setVmVoteTitle(vmTitleInput);
-            };
-
-            const startVote = async () => {
-                if (!sessionData) return;
-                if (!vmVoteTitle) {
-                    alert('タイトルが確定されていません。「タイトルを変更」ボタンを押して確定してください。');
-                    return;
-                }
-                if (!vmVoteType) {
-                    alert('「議員数の確認」「表決」などの種類を選択してください。');
-                    return;
-                }
-                
-                const sessionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(sessionData.id);
-                
-                await sessionRef.update({
-                    'voteState.active': true,
-                    'voteState.title': vmVoteTitle,
-                    'voteState.type': vmVoteType,
-                    'voteState.isTwoThirds': vmIsTwoThirds,
-                    'voteState.staffInputs': {} 
-                });
-
-                const messagesRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(sessionData.id).collection('messages');
-                await messagesRef.add({
-                    senderName: 'システム',
-                    senderRole: 'admin',
-                    text: `【受付開始】${vmVoteTitle} (${vmVoteType})`, 
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                    isSystemNotice: true
-                });
-            };
-
-            const submitStaffCount = async () => {
-                if (!sessionData || staffCountInput === '') return;
-                const val = parseInt(staffCountInput, 10);
-                if (isNaN(val)) return;
-
-                const sessionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(sessionData.id);
-                
-                await sessionRef.update({
-                    [`voteState.staffInputs.${staffIndex}`]: val
-                });
-
-                const messagesRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(sessionData.id).collection('messages');
-                await messagesRef.add({
-                    senderName: myName,
-                    senderRole: myRole,
-                    text: `「${voteState.title} ${voteState.type}」を「${val}」で送信済み。`,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                    isLog: true, 
-                    isPrivateLog: true, 
-                    targetStaffIndex: staffIndex 
-                });
-
-                alert('送信しました');
-                setStaffCountInput('');
-            };
-
-            const finalizeCount = async () => {
-                if (!sessionData) return;
-                const { voteState } = sessionData;
-                
-                let totalCount = 0;
-                Object.values(voteState.staffInputs || {}).forEach(v => totalCount += v);
-
-                const title = `【${voteState.type}】${voteState.title}`;
-                let resultText = "";
-                let denominator = 0;
-
-                const updates = {
-                    'voteState.active': false 
-                };
-
-                if (voteState.type === '議員数の確認') {
-                    updates['voteState.lastQuorums'] = voteState.staffInputs;
-                    updates['voteState.totalLastQuorum'] = totalCount;
-                    
-                    const majority = Math.floor(totalCount / 2) + 1;
-                    const twoThirds = Math.ceil(totalCount * (2/3));
-                    
-                    resultText = `現在数: ${totalCount}名 (過半数: ${majority})`;
-                    if (voteState.isTwoThirds) {
-                        resultText += ` (2/3: ${twoThirds})`;
-                    }
-
-                } else {
-                    denominator = voteState.totalLastQuorum || 0;
-                    const percentage = denominator > 0 ? ((totalCount / denominator) * 100).toFixed(1) : 0;
-                    
-                    resultText = `賛成/確認数: ${totalCount} / ${denominator} (${percentage}%)`;
-                    
-                    if (voteState.isTwoThirds) {
-                         const required = Math.ceil(denominator * (2/3));
-                         resultText += `\n必要な2/3数: ${required}`;
-                    }
-                }
-
-                const messagesRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(sessionData.id).collection('messages');
-                await messagesRef.add({
-                    senderName: 'システム',
-                    senderRole: 'admin',
-                    text: `*** 集計結果確定 ***\n${title}\n${resultText}`,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                    isResult: true
-                });
-
-                const sessionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(sessionData.id);
-                await sessionRef.update(updates);
-                
-                setVmVoteType(null);
-            };
-
-            // --- Actions: Alerts ---
-            const sendAlert = async () => {
-                const sessionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(sessionData.id);
-                await sessionRef.update({ alertActive: true });
-            };
-
-            const confirmAlert = async () => {
-                const sessionRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(sessionData.id);
-                await sessionRef.update({ alertActive: false });
-            };
-
-            // --- Actions: Chat ---
-            const sendMessage = async (e) => {
-                e.preventDefault();
-                if (!messageInput.trim()) return;
-
-                const messagesRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('sessions').doc(sessionData.id).collection('messages');
-                await messagesRef.add({
-                    senderName: myName,
-                    senderRole: myRole,
-                    text: messageInput,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
-                setMessageInput('');
-            };
-
-
-            // --- Render Logic ---
-
-            // 1. Landing Screen
-            if (view === 'landing') {
-                return (
-                    <div className="min-h-screen flex items-center justify-center p-4">
-                        <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
-                            <h1 className="text-2xl font-bold mb-6 text-center text-gray-800">総会チャットシステム</h1>
-                            
-                            {!window.location.href.includes('googleusercontent') && (
-                                <div className="text-sm text-gray-500 mb-6 bg-yellow-50 p-2 rounded border border-yellow-200">
-                                    ※ ご自身の環境で動かす際は、コード内の <code>firebaseConfig</code> を設定してください。
-                                </div>
-                            )}
-
-                            {errorMsg && (
-                                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-                                    <span className="block sm:inline">{errorMsg}</span>
-                                </div>
-                            )}
-                            
-                            <div className="space-y-4">
-                                <div className="border-b pb-4">
-                                    <h2 className="font-semibold mb-2">新規チャット作成</h2>
-                                    <input 
-                                        type="text" 
-                                        placeholder="チャット名 (例: 2026総会)" 
-                                        className="w-full p-2 border rounded mb-2"
-                                        value={chatNameInput}
-                                        onChange={e => setChatNameInput(e.target.value)}
-                                    />
-                                    <button 
-                                        onClick={createSession}
-                                        className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700"
-                                    >
-                                        作成
-                                    </button>
-                                </div>
-                                
-                                <div>
-                                    <h2 className="font-semibold mb-2">チャットに参加</h2>
-                                    <input 
-                                        type="text" 
-                                        placeholder="チャット名" 
-                                        className="w-full p-2 border rounded mb-2"
-                                        value={chatNameInput}
-                                        onChange={e => setChatNameInput(e.target.value)}
-                                    />
-                                    <input 
-                                        type="password" 
-                                        placeholder="パスワード" 
-                                        className="w-full p-2 border rounded mb-2"
-                                        value={passwordInput}
-                                        onChange={e => setPasswordInput(e.target.value)}
-                                    />
-                                    <button 
-                                        onClick={joinSession}
-                                        className="w-full bg-green-600 text-white p-2 rounded hover:bg-green-700"
-                                    >
-                                        入室
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                );
-            }
-
-            // 2. Lobby
-            if (view === 'lobby') {
-                return (
-                    <div className="min-h-screen flex items-center justify-center p-4">
-                        <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
-                            <h2 className="text-xl font-bold mb-2">入室設定: {sessionData.name}</h2>
-
-                            {errorMsg && (
-                                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-                                    <span className="block sm:inline">{errorMsg}</span>
-                                </div>
-                            )}
-                            
-                            <div className="bg-blue-50 border border-blue-200 rounded p-4 mb-6 text-center">
-                                <p className="text-sm text-blue-600 font-bold mb-1">管理者・担当用パスワード</p>
-                                <p className="text-3xl font-mono font-bold text-gray-800 tracking-wider select-all">{sessionData.mainPassword}</p>
-                                <p className="text-xs text-blue-500 mt-1">※再入室時に必要です。控えてください。</p>
-                            </div>
-
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium mb-1">本人の表示名</label>
-                                <input 
-                                    type="text" 
-                                    className="w-full p-2 border rounded"
-                                    value={myName}
-                                    onChange={e => setMyName(e.target.value)}
-                                    placeholder="例: 山田太郎"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <p className="font-medium">役割を選択して開始</p>
-                                {['副議長', '事務局', '会場担当'].map(role => (
-                                    <button 
-                                        key={role}
-                                        onClick={() => enterChat(role)}
-                                        className="w-full p-3 text-left border rounded hover:bg-gray-50 flex justify-between items-center"
-                                    >
-                                        {role}
-                                        <span className="text-gray-400">&rarr;</span>
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                );
-            }
-
-            // 3. Main Chat View
-            const isFlashing = myRole === '副議長' && alertActive;
-            const bgClass = isFlashing ? 'animate-flash-severe' : 'bg-gray-100';
-
-            return (
-                <div className={`flex flex-col h-screen ${bgClass}`}>
-                    {/* Header */}
-                    <header className="bg-white shadow p-4 flex justify-between items-center z-10">
-                        <div>
-                            <h1 className="font-bold text-lg">{sessionData.name}</h1>
-                            <div className="text-xs text-gray-500">
-                                {myName} ({myRole})
-                                {myRole === '会場担当' && <span className="ml-2 text-blue-600">Main Pass: {sessionData.mainPassword}</span>}
-                            </div>
-                        </div>
-                        <div className="flex gap-2">
-                            {/* Alert Buttons */}
-                            {myRole === '副議長' && alertActive && (
-                                <button onClick={confirmAlert} className="bg-red-600 text-white px-4 py-2 rounded font-bold animate-pulse-scale shadow-lg">
-                                    確認 (通知停止)
-                                </button>
-                            )}
-                            {(myRole === '事務局' || myRole === '会場担当') && (
-                                <button onClick={sendAlert} className="bg-yellow-400 text-black px-3 py-2 rounded flex items-center gap-1 text-sm hover:bg-yellow-500">
-                                    <Bell size={16} /> 気づいて！
-                                </button>
-                            )}
-                            <button onClick={() => window.location.reload()} className="p-2 text-gray-500 hover:text-red-500">
-                                <LogOut size={20} />
-                            </button>
-                        </div>
-                    </header>
-
-                    <div className="flex-1 flex overflow-hidden">
-                        
-                        {/* Left Side: Chat Area */}
-                        <div className={`flex-1 flex flex-col border-r bg-white ${myRole === '会場担当' || myRole === '会場係' ? 'hidden md:flex' : 'flex'}`}>
-                            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                                {messages.map(msg => {
-                                    if (msg.isPrivateLog) {
-                                        if (myRole !== '会場係' || staffIndex !== msg.targetStaffIndex) {
-                                            return null;
-                                        }
-                                    }
-                                    if (myRole === '会場係') {
-                                        const restrictedRoles = ['副議長', '事務局', '会場担当'];
-                                        if (restrictedRoles.includes(msg.senderRole) && !msg.isResult && !msg.isSystemNotice) {
-                                            return null;
-                                        }
-                                    }
-                                    return (
-                                        <div key={msg.id} className={`p-3 rounded-lg max-w-[85%] 
-                                            ${msg.senderName === myName ? 'ml-auto bg-blue-100' : 'bg-gray-100'} 
-                                            ${msg.isResult ? 'bg-red-50 border-2 border-red-200 w-full max-w-full text-center' : ''}
-                                            ${msg.isSystemNotice ? 'bg-green-50 border border-green-200 w-full max-w-full text-center text-green-800 font-bold' : ''}
-                                            ${msg.isLog ? 'bg-gray-50 border border-gray-200 text-gray-600 text-sm italic' : ''}
-                                        `}>
-                                            <div className="text-xs text-gray-500 mb-1 flex justify-between">
-                                                <span>{msg.senderName} ({msg.senderRole})</span>
-                                            </div>
-                                            <div className="whitespace-pre-wrap">{msg.text}</div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                            <form onSubmit={sendMessage} className="p-3 border-t flex gap-2">
-                                <input 
-                                    className="flex-1 border rounded p-1 text-sm"
-                                    value={messageInput}
-                                    onChange={e => setMessageInput(e.target.value)}
-                                    placeholder="メッセージを入力..."
-                                />
-                                <button className="bg-gray-600 text-white px-3 py-1 rounded text-sm">送</button>
-                            </form>
-                        </div>
-
-                        {/* Right Side / Overlay: Function Panels */}
-                        
-                        {/* A. Venue Manager Panel */}
-                        {myRole === '会場担当' && (
-                            <div className="w-full md:w-1/2 bg-gray-50 flex flex-col overflow-y-auto">
-                                {/* Staff Settings */}
-                                <div className="p-4 bg-white border-b mb-2">
-                                    <h3 className="font-bold flex items-center gap-2 mb-2"><Users size={18}/> 会場係設定</h3>
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <label>人数 (1-6):</label>
-                                        <input 
-                                            type="number" min="1" max="6" 
-                                            value={vmStaffCount} 
-                                            onChange={e => setVmStaffCount(e.target.value)}
-                                            className="border w-16 p-1 rounded"
-                                        />
-                                        <button onClick={updateStaffSettings} className="bg-gray-200 px-3 py-1 rounded text-sm hover:bg-gray-300">設定・パスワード更新</button>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2 text-sm bg-gray-100 p-2 rounded">
-                                        {sessionData.venueStaffPasswords && sessionData.venueStaffPasswords.map((pw, idx) => (
-                                            <div key={idx} className="flex justify-between">
-                                                <span>係{idx + 1}:</span>
-                                                <span className="font-mono font-bold select-all">{pw}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Vote Controller */}
-                                <div className="p-4 bg-white border-b flex-1">
-                                    <h3 className="font-bold flex items-center gap-2 mb-4"><CheckSquare size={18}/> 表決コントロール</h3>
-                                    
-                                    <div className="space-y-3 mb-4">
-                                        {/* タイトル入力と確定UI */}
-                                        <div className="bg-gray-100 p-3 rounded">
-                                            <label className="text-xs font-bold text-gray-500 mb-1 block">次回送信タイトル</label>
-                                            <div className="flex gap-2">
-                                                <input 
-                                                    type="text" 
-                                                    className="flex-1 p-2 border rounded font-lg"
-                                                    placeholder="例: 第1号議案"
-                                                    value={vmTitleInput}
-                                                    onChange={e => setVmTitleInput(e.target.value)}
-                                                />
-                                                <button 
-                                                    onClick={confirmTitle}
-                                                    className="bg-gray-600 text-white px-3 rounded flex items-center gap-1 text-sm hover:bg-gray-700 whitespace-nowrap"
-                                                >
-                                                    <Edit3 size={14}/> 変更（確定）
-                                                </button>
-                                            </div>
-                                            <div className="mt-2 text-sm">
-                                                現在の設定: <span className="font-bold text-blue-700 bg-white px-2 py-1 rounded border border-blue-200">{vmVoteTitle || "(未設定)"}</span>
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="flex flex-wrap gap-2">
-                                            {['議員数の確認', '表決', '反対', 'そのた'].map(type => (
-                                                <button 
-                                                    key={type}
-                                                    onClick={() => setVmVoteType(type)}
-                                                    className={`px-3 py-2 rounded border ${vmVoteType === type ? 'bg-blue-600 text-white' : 'bg-white hover:bg-gray-100'}`}
-                                                >
-                                                    {type}
-                                                </button>
-                                            ))}
-                                        </div>
-
-                                        <button 
-                                            onClick={() => setVmIsTwoThirds(!vmIsTwoThirds)}
-                                            className={`w-full p-2 rounded border flex items-center justify-center gap-2 ${vmIsTwoThirds ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'}`}
-                                        >
-                                            <AlertTriangle size={16}/> 2/3議決 (議長を含む)
-                                        </button>
-
-                                        <button 
-                                            onClick={startVote}
-                                            disabled={!vmVoteType || !vmVoteTitle} 
-                                            className={`w-full py-3 rounded font-bold shadow transition-colors ${
-                                                (!vmVoteType || !vmVoteTitle) 
-                                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                                                : 'bg-green-600 text-white hover:bg-green-700'
-                                            }`}
-                                        >
-                                            入力要求を送信 (スタート)
-                                        </button>
-                                    </div>
-
-                                    {/* Monitoring Table */}
-                                    <div className="mt-6 border rounded-lg overflow-hidden bg-white shadow-sm">
-                                        <div className="bg-gray-100 p-2 font-bold text-center border-b">集計状況</div>
-                                        <table className="w-full text-center">
-                                            <thead className="text-xs text-gray-500 bg-gray-50 border-b">
-                                                <tr>
-                                                    <th className="p-2">担当</th>
-                                                    <th className="p-2">入力値</th>
-                                                    <th className="p-2">前回定数</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {sessionData.venueStaffPasswords && sessionData.venueStaffPasswords.map((_, idx) => {
-                                                    const val = voteState.staffInputs ? voteState.staffInputs[idx] : undefined;
-                                                    const lastQ = voteState.lastQuorums ? voteState.lastQuorums[idx] : '-';
-                                                    return (
-                                                        <tr key={idx} className="border-b last:border-0">
-                                                            <td className="p-2 text-sm">会場係 {idx + 1}</td>
-                                                            <td className="p-2 font-bold text-xl text-red-600">
-                                                                {val !== undefined ? val : <span className="text-gray-300">...</span>}
-                                                            </td>
-                                                            <td className="p-2 text-gray-400 text-sm">{lastQ}</td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                            </tbody>
-                                            <tfoot className="bg-gray-50 font-bold">
-                                                <tr>
-                                                    <td className="p-2">合計</td>
-                                                    <td className="p-2 text-red-600">
-                                                        {(() => {
-                                                            const currentTotal = Object.values(voteState.staffInputs || {}).reduce((a,b) => a+b, 0);
-                                                            // リアルタイム％表示
-                                                            if (voteState.type !== '議員数の確認' && voteState.totalLastQuorum > 0) {
-                                                                const pct = ((currentTotal / voteState.totalLastQuorum) * 100).toFixed(1);
-                                                                return (
-                                                                    <div>
-                                                                        <div>{currentTotal}</div>
-                                                                        <div className="text-xs text-gray-500">({pct}%)</div>
-                                                                    </div>
-                                                                );
-                                                            }
-                                                            return currentTotal;
-                                                        })()}
-                                                    </td>
-                                                    <td className="p-2 text-gray-500">
-                                                        {voteState.totalLastQuorum || '-'}
-                                                    </td>
-                                                </tr>
-                                            </tfoot>
-                                        </table>
-                                        <div className="p-2">
-                                            <button 
-                                                onClick={finalizeCount}
-                                                className="w-full bg-red-600 text-white py-2 rounded font-bold hover:bg-red-700"
-                                            >
-                                                カウントの確定
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* B. Venue Staff View (Missing in previous, restored here) */}
-                        {myRole === '会場係' && (
-                            <div className="w-full md:w-1/2 bg-white flex flex-col p-4 border-l">
-                                <h3 className="font-bold text-gray-500 mb-4 flex items-center gap-2">
-                                    <Hand size={18}/> 会場係 {staffIndex + 1} 入力パネル
-                                </h3>
-
-                                {voteState.active ? (
-                                    <div className="flex-1 flex flex-col justify-center space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                        <div className="bg-blue-50 p-4 rounded-lg border-l-4 border-blue-500">
-                                            <div className="text-sm text-blue-600 font-bold mb-1">{voteState.type}</div>
-                                            <div className="text-2xl font-bold text-gray-800">{voteState.title}</div>
-                                            {voteState.isTwoThirds && (
-                                                <div className="mt-2 text-red-600 font-bold text-sm bg-red-50 p-2 rounded">
-                                                    ※ この議題は議長も議員数に含みます
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        <div className="space-y-2">
-                                            <label className="block font-bold text-gray-700">人数入力</label>
-                                            <div className="flex items-center gap-2">
-                                                <input 
-                                                    type="number" 
-                                                    className="flex-1 p-4 text-3xl text-center border-2 border-blue-300 rounded-lg focus:outline-none focus:border-blue-600"
-                                                    value={staffCountInput}
-                                                    onChange={e => setStaffCountInput(e.target.value)}
-                                                    placeholder="0"
-                                                    autoFocus
-                                                />
-                                                {voteState.type !== '議員数の確認' && (
-                                                    <div className="text-gray-500 text-sm w-20 text-right">
-                                                        <div>母数</div>
-                                                        <div className="text-xl font-bold">
-                                                            / {voteState.lastQuorums ? (voteState.lastQuorums[staffIndex] || 0) : 0}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        <button 
-                                            onClick={submitStaffCount}
-                                            className="w-full bg-blue-600 text-white py-4 rounded-lg text-xl font-bold shadow-lg active:scale-95 transition-transform"
-                                        >
-                                            決定 (送信)
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                                        <RefreshCcw size={48} className="mb-4 opacity-50"/>
-                                        <p>次の指示を待機中...</p>
-                                    </div>
-                                )}
-                                
-                                <div className="mt-auto pt-4 border-t">
-                                    <h4 className="font-bold mb-2">チャット</h4>
-                                    <div className="h-48 overflow-y-auto bg-gray-50 p-2 rounded border mb-2">
-                                        {messages.slice(-5).map(msg => {
-                                             // フィルタリング: プライベートログは対象者のみ表示
-                                             if (msg.isPrivateLog) {
-                                                if (myRole !== '会場係' || staffIndex !== msg.targetStaffIndex) {
-                                                    return null;
-                                                }
-                                            }
-
-                                            // 会場係の場合、システム以外の管理職メッセージを非表示
-                                            if (myRole === '会場係') {
-                                                const restrictedRoles = ['副議長', '事務局', '会場担当'];
-                                                if (restrictedRoles.includes(msg.senderRole) && !msg.isResult && !msg.isSystemNotice) {
-                                                    return null;
-                                                }
-                                            }
-
-                                            return (
-                                            <div key={msg.id} className={`text-sm mb-2 ${msg.isLog ? 'italic text-gray-500' : ''} ${msg.isSystemNotice ? 'text-green-700 font-bold' : ''}`}>
-                                                <span className="font-bold text-xs text-gray-500">{msg.senderName}:</span> {msg.text}
-                                            </div>
-                                            );
-                                        })}
-                                    </div>
-                                    <form onSubmit={sendMessage} className="flex gap-2">
-                                        <input 
-                                            className="flex-1 border rounded p-1 text-sm"
-                                            value={messageInput}
-                                            onChange={e => setMessageInput(e.target.value)}
-                                            placeholder="メッセージ..."
-                                        />
-                                        <button className="bg-gray-600 text-white px-3 py-1 rounded text-sm">送</button>
-                                    </form>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* C. Vice Chair / Secretariat View (Right side placeholder or specific info) */}
-                        {(myRole === '副議長' || myRole === '事務局') && (
-                            <div className="hidden md:block w-1/3 bg-gray-50 p-4 border-l flex flex-col">
-                                <h3 className="font-bold text-gray-500 mb-4">ステータスパネル</h3>
-                                <div className="bg-white p-4 rounded shadow-sm mb-4">
-                                    <h4 className="text-sm font-bold text-gray-400 mb-2">現在の定数 (全体)</h4>
-                                    <p className="text-3xl font-bold text-gray-800">{voteState.totalLastQuorum} 名</p>
-                                    <div className="text-sm text-gray-500 mt-1">
-                                        過半数: {Math.floor(voteState.totalLastQuorum / 2) + 1} / 
-                                        2/3: {Math.ceil(voteState.totalLastQuorum * (2/3))}
-                                    </div>
-                                </div>
-                                <div className="bg-white p-4 rounded shadow-sm flex-1 mb-4">
-                                    <h4 className="text-sm font-bold text-gray-400 mb-2">最新の集計結果</h4>
-                                    {messages.filter(m => m.isResult).slice(-1).map(m => (
-                                        <div key={m.id} className="text-sm whitespace-pre-wrap">
-                                            {m.text.replace('*** 集計結果確定 ***', '')}
-                                        </div>
-                                    ))}
-                                </div>
-
-                                {/* 削除管理ボタン (事務局のみ) */}
-                                {myRole === '事務局' && (
-                                    <div className="mt-auto pt-4 border-t">
-                                        <button 
-                                            onClick={openDeleteManager}
-                                            className="w-full bg-gray-200 text-gray-700 py-2 rounded flex items-center justify-center gap-2 hover:bg-gray-300 text-sm"
-                                        >
-                                            <Trash2 size={16}/> 他のチャットを管理（削除）
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                    </div>
-
-                    {/* 削除モーダル */}
-                    {showDeleteModal && (
-                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                            <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full m-4">
-                                <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-red-600">
-                                    <Trash2 size={24}/> チャット削除管理
-                                </h3>
-                                
-                                {/* メッセージ表示 */}
-                                {deleteMessage && (
-                                    <div className={`p-3 rounded mb-4 text-sm ${deleteStep === 'result' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                        {deleteMessage}
-                                    </div>
-                                )}
-
-                                {/* STEP 1: 選択 */}
-                                {deleteStep === 'selection' && (
-                                    <div>
-                                        <p className="text-sm text-gray-600 mb-4">
-                                            削除するチャットを選択してください。
-                                        </p>
-                                        <div className="mb-4 max-h-48 overflow-y-auto border rounded p-2 bg-gray-50">
-                                            {otherSessions.length === 0 ? (
-                                                <div className="text-gray-400 text-center py-4">削除可能な他のチャットはありません</div>
-                                            ) : (
-                                                otherSessions.map(s => (
-                                                    <label key={s.id} className="flex items-center gap-2 p-2 hover:bg-white border-b last:border-0 cursor-pointer">
-                                                        <input 
-                                                            type="checkbox" 
-                                                            value={s.id}
-                                                            checked={selectedDeleteIds.includes(s.id)}
-                                                            onChange={() => toggleSelectSession(s.id)}
-                                                        />
-                                                        <div>
-                                                            <div className="font-bold">{s.name}</div>
-                                                            <div className="text-xs text-gray-400">ID: {s.id}</div>
-                                                        </div>
-                                                    </label>
-                                                ))
-                                            )}
-                                        </div>
-
-                                        <div className="mb-4">
-                                            <label className="block text-sm font-bold mb-1">マスターパスワード</label>
-                                            <div className="flex relative items-center">
-                                                <input 
-                                                    type={showMasterPass ? "text" : "password"} 
-                                                    className="w-full border p-2 rounded pr-10"
-                                                    value={masterPassInput}
-                                                    onChange={e => setMasterPassInput(e.target.value)}
-                                                    placeholder="パスワードを入力"
-                                                />
-                                                <button 
-                                                    type="button"
-                                                    onClick={() => setShowMasterPass(!showMasterPass)}
-                                                    className="absolute right-2 text-gray-500 hover:text-gray-700"
-                                                >
-                                                    {showMasterPass ? <EyeOff size={20}/> : <Eye size={20}/>}
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        <div className="flex gap-2 justify-end">
-                                            <button 
-                                                onClick={() => setShowDeleteModal(false)}
-                                                className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
-                                            >
-                                                キャンセル
-                                            </button>
-                                            <button 
-                                                onClick={initiateDelete}
-                                                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 font-bold"
-                                            >
-                                                削除確認へ
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* STEP 2: 確認 */}
-                                {deleteStep === 'confirming' && (
-                                    <div className="text-center">
-                                        <div className="text-red-600 font-bold mb-4 text-lg">警告</div>
-                                        <p className="mb-6">
-                                            選択された {selectedDeleteIds.length} 件のチャットを本当に削除しますか？<br/>
-                                            <span className="text-red-600 text-sm font-bold">チャット内のメッセージ履歴も全て完全に削除され、元に戻すことはできません。</span>
-                                        </p>
-                                        <div className="flex gap-4 justify-center">
-                                            <button 
-                                                onClick={() => setDeleteStep('selection')}
-                                                className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
-                                            >
-                                                戻る
-                                            </button>
-                                            <button 
-                                                onClick={executeDelete}
-                                                className="px-6 py-2 bg-red-600 text-white rounded hover:bg-red-700 font-bold shadow-lg"
-                                            >
-                                                はい、完全に削除します
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* STEP 3: 処理中 */}
-                                {deleteStep === 'processing' && (
-                                    <div className="text-center py-8">
-                                        <div className="animate-spin h-10 w-10 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-                                        <p>削除中...</p>
-                                    </div>
-                                )}
-
-                                {/* STEP 4: 完了 */}
-                                {deleteStep === 'result' && (
-                                    <div className="text-center">
-                                        <div className="mb-6">
-                                            <CheckSquare size={48} className="text-green-500 mx-auto mb-2"/>
-                                            <p className="font-bold">処理が完了しました</p>
-                                        </div>
-                                        <button 
-                                            onClick={() => setDeleteStep('selection')}
-                                            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                                        >
-                                            戻る
-                                        </button>
-                                        <button 
-                                            onClick={() => setShowDeleteModal(false)}
-                                            className="ml-2 px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
-                                        >
-                                            閉じる
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
-                </div>
-            );
+      }
+
+      return `<ruby>${escapeHtml(surface)}<rt>${escapeHtml(reading)}</rt></ruby>`;
+    }
+
+    function autoRubyText(text) {
+      if (!text) return '';
+      return tokenizer.tokenize(text).map(rubyForToken).join('');
+    }
+
+    function renderWithRuby(text, dictText) {
+      const entries = parseCustomDictionary(dictText);
+      const customApplied = applyCustomDictionary(text, entries);
+      return customApplied.map((segment) => {
+        if (segment.type === 'html') return segment.value;
+        return autoRubyText(segment.value);
+      }).join('').replace(/\r?\n/g, '<br>');
+    }
+
+    async function readFileAsText(file) {
+      const ext = file.name.split('.').pop().toLowerCase();
+      if (ext === 'docx') {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        return result.value || '';
+      }
+      return await file.text();
+    }
+
+    sourceFile.addEventListener('change', async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      try {
+        sourceText.value = await readFileAsText(file);
+        showMessage(`「${file.name}」を入力エリアに読み込みました。`);
+      } catch (error) {
+        showMessage('ファイルの読み込みに失敗しました。対応形式を確認してください。', 'error');
+      } finally {
+        event.target.value = '';
+      }
+    });
+
+    dictFile.addEventListener('change', async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      try {
+        const text = await readFileAsText(file);
+        customDict.value += `${customDict.value.trim() ? '\n' : ''}${text.trim()}`;
+        showMessage(`「${file.name}」をカスタム辞書に追記しました。`);
+      } catch (error) {
+        showMessage('辞書ファイルの読み込みに失敗しました。対応形式を確認してください。', 'error');
+      } finally {
+        event.target.value = '';
+      }
+    });
+
+    generateBtn.addEventListener('click', () => {
+      if (!tokenizer) {
+        showMessage('Kuromoji辞書の読み込みがまだ完了していません。', 'error');
+        return;
+      }
+      generateBtn.disabled = true;
+      generateBtn.textContent = '処理中...';
+      window.setTimeout(() => {
+        try {
+          outputArea.innerHTML = renderWithRuby(sourceText.value, customDict.value);
+          showMessage('ふりがなを付与しました。出力エリアで直接編集できます。');
+        } catch (error) {
+          console.error(error);
+          showMessage('ルビ付与処理中にエラーが発生しました。', 'error');
+        } finally {
+          generateBtn.disabled = false;
+          generateBtn.textContent = 'ふりがなを付ける';
         }
+      }, 20);
+    });
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
+    copyBtn.addEventListener('click', () => {
+      const range = document.createRange();
+      range.selectNodeContents(outputArea);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      const ok = document.execCommand('copy');
+      selection.removeAllRanges();
+      showMessage(ok ? 'リッチテキストとしてコピーしました。Wordに貼り付けできます。' : 'コピーに失敗しました。', ok ? 'success' : 'error');
+    });
+
+    downloadBtn.addEventListener('click', () => {
+      const bodyHtml = outputArea.innerHTML || '';
+      const docHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>ルビ付き文書</title><style>body{font-family:"Yu Gothic",Meiryo,sans-serif;line-height:2;}rt{font-size:0.55em;color:#2563eb;}</style></head><body>${bodyHtml}</body></html>`;
+      const blob = new Blob(['\ufeff', docHtml], { type: 'application/msword' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ruby-document-${new Date().toISOString().slice(0, 10)}.doc`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showMessage('Wordで開ける .doc ファイルを保存しました。');
+    });
+
+    kuromoji.builder({ dicPath: 'https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/' }).build((error, builtTokenizer) => {
+      if (error) {
+        document.getElementById('loadingScreen').innerHTML = '<div class="rounded-3xl border border-red-200 bg-red-50 p-8 text-center text-red-700"><h1 class="text-xl font-bold">辞書の読み込みに失敗しました</h1><p class="mt-2 text-sm">ネットワーク接続を確認して再読み込みしてください。</p></div>';
+        console.error(error);
+        return;
+      }
+      tokenizer = builtTokenizer;
+      document.getElementById('loadingScreen').classList.add('hidden');
+      document.getElementById('app').classList.remove('hidden');
+    });
+  </script>
 </body>
 </html>
