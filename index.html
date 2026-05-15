@@ -3,322 +3,878 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>自動ふりがな（ルビ）付与ツール</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['Inter', 'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', 'sans-serif']
-          }
-        }
-      }
-    };
-  </script>
+  <title>教会月間予定表メーカー</title>
   <style>
+    :root {
+      color-scheme: light;
+      --ink: #111827;
+      --muted: #64748b;
+      --line: #111827;
+      --soft-line: #9ca3af;
+      --paper: #ffffff;
+      --bg: #f1f5f9;
+      --accent: #2563eb;
+      --accent-soft: #dbeafe;
+      --danger: #b91c1c;
+    }
+
+    * { box-sizing: border-box; }
+
     body {
-      font-family: Inter, "Noto Sans JP", "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif;
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", Meiryo, system-ui, sans-serif;
     }
 
-    ruby {
-      ruby-position: over;
+    button, input, textarea, select { font: inherit; }
+
+    .app-shell {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px;
     }
 
-    rt {
-      font-size: 0.58em;
-      color: #2563eb;
-      user-select: text;
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: center;
+      margin-bottom: 18px;
     }
 
-    #outputArea:empty::before {
-      content: "ここにルビ付きテキストが表示されます。表示後はこのエリア内で直接編集できます。";
-      color: #94a3b8;
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: .18em;
+      text-transform: uppercase;
     }
 
-    .checker-bg {
-      background-image:
-        linear-gradient(45deg, rgba(59, 130, 246, 0.035) 25%, transparent 25%),
-        linear-gradient(-45deg, rgba(59, 130, 246, 0.035) 25%, transparent 25%),
-        linear-gradient(45deg, transparent 75%, rgba(59, 130, 246, 0.035) 75%),
-        linear-gradient(-45deg, transparent 75%, rgba(59, 130, 246, 0.035) 75%);
-      background-size: 22px 22px;
-      background-position: 0 0, 0 11px, 11px -11px, -11px 0px;
+    h1 {
+      margin: 0;
+      font-size: clamp(28px, 4vw, 42px);
+      line-height: 1.1;
+      letter-spacing: -.03em;
+    }
+
+    .lead {
+      max-width: 760px;
+      margin: 12px 0 0;
+      color: #475569;
+      line-height: 1.8;
+    }
+
+    .toolbar {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 12px;
+      align-items: end;
+      padding: 18px;
+      margin-bottom: 18px;
+      border: 1px solid #dbe3ef;
+      border-radius: 22px;
+      background: rgba(255, 255, 255, .9);
+      box-shadow: 0 18px 40px rgba(15, 23, 42, .07);
+    }
+
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .span-2 { grid-column: span 2; }
+    .span-3 { grid-column: span 3; }
+    .span-4 { grid-column: span 4; }
+    .span-5 { grid-column: span 5; }
+    .span-6 { grid-column: span 6; }
+    .span-8 { grid-column: span 8; }
+    .span-12 { grid-column: span 12; }
+
+    label {
+      color: #334155;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    input, textarea, select {
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      background: white;
+      padding: 10px 12px;
+      color: var(--ink);
+      outline: none;
+    }
+
+    input:focus, textarea:focus, select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px var(--accent-soft);
+    }
+
+    textarea {
+      min-height: 86px;
+      resize: vertical;
+      line-height: 1.6;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+
+    .button-row { display: flex; gap: 10px; flex-wrap: wrap; }
+
+    .btn {
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 42px;
+      border: 0;
+      border-radius: 12px;
+      padding: 10px 16px;
+      cursor: pointer;
+      font-weight: 900;
+      transition: transform .15s ease, opacity .15s ease, background .15s ease;
+    }
+
+    .btn:hover { transform: translateY(-1px); }
+    .btn:disabled { cursor: not-allowed; opacity: .55; transform: none; }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-dark { background: #0f172a; color: white; }
+    .btn-ghost { border: 1px solid #cbd5e1; background: white; color: #0f172a; }
+
+    .notice {
+      display: none;
+      margin-bottom: 18px;
+      border-radius: 16px;
+      padding: 12px 14px;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.6;
+    }
+    .notice.show { display: block; }
+    .notice.ok { border: 1px solid #bbf7d0; background: #f0fdf4; color: #166534; }
+    .notice.warn { border: 1px solid #fde68a; background: #fffbeb; color: #92400e; }
+    .notice.error { border: 1px solid #fecaca; background: #fef2f2; color: var(--danger); }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .side-panel {
+      position: sticky;
+      top: 16px;
+      border: 1px solid #dbe3ef;
+      border-radius: 22px;
+      background: white;
+      padding: 18px;
+      box-shadow: 0 18px 40px rgba(15, 23, 42, .06);
+    }
+
+    .side-panel h2 { margin: 0 0 10px; font-size: 18px; }
+    .side-panel ol { margin: 0; padding-left: 1.35em; color: #475569; line-height: 1.8; font-size: 14px; }
+    .side-panel code { border-radius: 6px; background: #f1f5f9; padding: 2px 5px; color: #1e293b; }
+
+    .sheet-preview {
+      overflow: auto;
+      padding: 18px;
+      border-radius: 18px;
+      background: #dbe3ef;
+    }
+
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto;
+      padding: 9mm 10mm 8mm;
+      background: var(--paper);
+      box-shadow: 0 24px 80px rgba(15, 23, 42, .18);
+      color: #000;
+      font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+    }
+
+    .calendar-title {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      align-items: baseline;
+      margin-bottom: 10px;
+      font-weight: 900;
+      font-size: 18px;
+      letter-spacing: .02em;
+    }
+    .calendar-title strong { font-size: 24px; }
+
+    .theme-row {
+      display: grid;
+      grid-template-columns: 42mm 1fr;
+      gap: 14mm;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .hymn-box {
+      min-height: 29mm;
+      border: 1.8px solid var(--line);
+      border-radius: 13px;
+      padding: 8px 14px;
+      font-size: 12px;
+      font-weight: 900;
+      line-height: 1.65;
+    }
+
+    .hymn-title { text-align: center; margin-bottom: 2px; }
+    .hymn-item { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+
+    .theme-text {
+      text-align: center;
+      font-size: 12px;
+      font-weight: 900;
+      line-height: 1.65;
+    }
+    .theme-text .verse { margin-top: 3px; text-align: right; }
+
+    .service-note {
+      display: flex;
+      gap: 24px;
+      margin: 0 0 3px 20px;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .month-grid {
+      display: grid;
+      grid-template-columns: 45% 55%;
+      border: 2px solid var(--line);
+      border-bottom: 0;
+      font-size: 11px;
+    }
+
+    .week-left, .week-right { min-height: 35mm; border-bottom: 2px solid var(--line); }
+    .week-left { border-right: 2px solid var(--line); }
+
+    .sunday-head {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      min-height: 20px;
+      padding: 2px 8px;
+      border-bottom: 1.5px solid var(--line);
+      font-weight: 900;
+      font-size: 13px;
+    }
+    .sunday-head .date { min-width: 42px; font-size: 16px; }
+    .sunday-events { display: flex; gap: 14px; flex-wrap: wrap; }
+
+    .duties { padding: 5px 8px 6px; }
+    .duty-row {
+      display: grid;
+      grid-template-columns: 32px 1fr;
+      gap: 8px;
+      min-height: 19px;
+      align-items: start;
+      line-height: 1.35;
+    }
+    .duty-label { font-weight: 900; }
+    .names { white-space: pre-wrap; }
+
+    .weekday-row {
+      display: grid;
+      grid-template-columns: 35px 1fr 58px;
+      min-height: 20px;
+      border-bottom: 1px dashed var(--soft-line);
+      line-height: 1.15;
+    }
+    .weekday-row:last-child { border-bottom: 0; }
+    .day-cell { padding: 3px 5px; font-size: 12px; font-weight: 900; }
+    .event-cell { padding: 3px 4px; white-space: pre-wrap; }
+    .scripture-cell {
+      padding: 2px 4px;
+      text-align: right;
+      white-space: pre-wrap;
+      font-size: 8px;
+      font-weight: 900;
+      line-height: 1.05;
+    }
+
+    .footer-notes {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 10px;
+      font-size: 12px;
+      font-weight: 900;
+      line-height: 1.8;
+    }
+    .footer-notes div:last-child { text-align: center; }
+
+    .manual-panel { display: none; }
+    .manual-panel.open { display: block; }
+
+    @media (max-width: 1100px) {
+      .workspace { grid-template-columns: 1fr; }
+      .side-panel { position: static; }
+      .toolbar { grid-template-columns: repeat(6, 1fr); }
+      .span-2, .span-3, .span-4, .span-5, .span-6, .span-8 { grid-column: span 6; }
+    }
+
+    @media (max-width: 760px) {
+      .app-shell { padding: 14px; }
+      .hero { grid-template-columns: 1fr; }
+      .toolbar { grid-template-columns: 1fr; }
+      .span-2, .span-3, .span-4, .span-5, .span-6, .span-8, .span-12 { grid-column: span 1; }
+      .sheet-preview { padding: 10px; }
+      .page { transform-origin: top left; width: 210mm; }
+    }
+
+    @media print {
+      body { background: white; }
+      .app-shell { max-width: none; padding: 0; }
+      .hero, .toolbar, .notice, .side-panel { display: none !important; }
+      .workspace, .sheet-preview { display: block; padding: 0; background: white; }
+      .page { width: 210mm; min-height: 297mm; margin: 0; box-shadow: none; page-break-after: always; }
+      @page { size: A4 portrait; margin: 0; }
     }
   </style>
 </head>
-<body class="min-h-screen bg-slate-100 text-slate-800">
-  <div id="loadingScreen" class="fixed inset-0 z-50 flex items-center justify-center bg-white">
-    <div class="rounded-3xl border border-blue-100 bg-white p-10 text-center shadow-2xl shadow-blue-100">
-      <div class="mx-auto mb-5 h-14 w-14 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600"></div>
-      <h1 class="text-xl font-bold text-slate-900">Kuromoji辞書を読み込み中</h1>
-      <p class="mt-2 text-sm text-slate-500">初回は数秒かかることがあります。しばらくお待ちください。</p>
-    </div>
-  </div>
-
-  <main id="app" class="hidden min-h-screen">
-    <header class="border-b border-blue-100 bg-white/90 backdrop-blur">
-      <div class="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-6 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
-        <div>
-          <p class="text-sm font-semibold uppercase tracking-[0.25em] text-blue-600">Ruby Generator</p>
-          <h1 class="mt-2 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">自動ふりがな（ルビ）付与ツール</h1>
-          <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-600">テキスト・Word文書を読み込み、カスタム辞書を優先して漢字にルビを自動付与します。結果は直接編集してWord向けに保存できます。</p>
-        </div>
-        <div id="tokenizerStatus" class="inline-flex items-center rounded-full bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-200">
-          <span class="mr-2 h-2.5 w-2.5 rounded-full bg-emerald-500"></span>辞書読み込み完了
-        </div>
+<body>
+  <main class="app-shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Monthly Schedule Maker</p>
+        <h1>教会月間予定表メーカー</h1>
+        <p class="lead">年と月を入力すると、添付画像のようなA4月間予定表の枠を自動作成します。Googleスプレッドシートの「行事」「奉仕者」「聖書箇所」「祈り対象」などを読み込み、該当月の情報を差し込みます。</p>
+      </div>
+      <div class="button-row">
+        <button class="btn btn-dark" id="printBtn">印刷 / PDF保存</button>
       </div>
     </header>
 
-    <section class="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-2 lg:px-8">
-      <div class="space-y-6">
-        <section class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 class="text-lg font-bold text-slate-950">入力エリア</h2>
-              <p class="text-sm text-slate-500">直接入力、または .txt / .docx ファイルを読み込めます。</p>
-            </div>
-            <label class="inline-flex cursor-pointer items-center justify-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 focus-within:ring-4 focus-within:ring-blue-200">
-              原文ファイル読込
-              <input id="sourceFile" type="file" accept=".txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="sr-only" />
-            </label>
-          </div>
-          <textarea id="sourceText" class="min-h-[390px] w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 p-4 text-base leading-8 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100" placeholder="例：今日は総会資料を確認し、議案について説明します。"></textarea>
-        </section>
-
-        <section class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 class="text-lg font-bold text-slate-950">カスタム辞書</h2>
-              <p class="text-sm text-slate-500">1行に「単語,ふりがな」または「単語 ふりがな」。長い単語を優先します。</p>
-            </div>
-            <label class="inline-flex cursor-pointer items-center justify-center rounded-xl bg-slate-800 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-slate-950 focus-within:ring-4 focus-within:ring-slate-200">
-              辞書ファイル追記
-              <input id="dictFile" type="file" accept=".txt,.csv,.docx,text/plain,text/csv,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="sr-only" />
-            </label>
-          </div>
-          <textarea id="customDict" class="min-h-[190px] w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 p-4 font-mono text-sm leading-7 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-100" placeholder="例：\n総会資料,そうかいしりょう\n議案 ぎあん"></textarea>
-        </section>
+    <section class="toolbar" aria-label="予定表設定">
+      <div class="field span-2">
+        <label for="yearInput">年</label>
+        <input id="yearInput" type="number" min="1900" max="2100" value="2026" />
+      </div>
+      <div class="field span-2">
+        <label for="monthInput">月</label>
+        <input id="monthInput" type="number" min="1" max="12" value="4" />
+      </div>
+      <div class="field span-5">
+        <label for="sheetIdInput">GoogleスプレッドシートID</label>
+        <input id="sheetIdInput" value="1HoLIUho5Qlx49xPce8WxtTUHTm_4_NOwyhzdCR4oROA" />
+      </div>
+      <div class="field span-3">
+        <label for="churchNameInput">表題</label>
+        <input id="churchNameInput" value="豊川中央キリスト教会月間予定表" />
       </div>
 
-      <div class="space-y-6">
-        <section class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div class="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <h2 class="text-lg font-bold text-slate-950">出力エリア</h2>
-              <p class="text-sm text-slate-500">ルビ付きHTMLをリッチテキストとして表示します。直接編集できます。</p>
-            </div>
-            <div class="flex flex-wrap gap-2">
-              <button id="generateBtn" class="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-200 disabled:cursor-not-allowed disabled:bg-slate-300">ふりがなを付ける</button>
-              <button id="copyBtn" class="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 transition hover:bg-blue-100 focus:outline-none focus:ring-4 focus:ring-blue-100">コピーする</button>
-              <button id="downloadBtn" class="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-slate-100">Wordとして保存</button>
-            </div>
-          </div>
-          <div id="outputArea" contenteditable="true" class="checker-bg min-h-[640px] overflow-auto rounded-2xl border border-slate-200 bg-white p-5 text-lg leading-10 outline-none transition focus:border-blue-400 focus:ring-4 focus:ring-blue-100"></div>
-        </section>
-        <div id="message" class="hidden rounded-2xl border px-4 py-3 text-sm font-semibold"></div>
+      <div class="field span-4">
+        <label for="themeTitleInput">年度・テーマ名</label>
+        <input id="themeTitleInput" value="2026年度　テーマ聖句" />
       </div>
+      <div class="field span-5">
+        <label for="themeTextInput">テーマ聖句本文</label>
+        <input id="themeTextInput" value="私たちは見えるものによらず、信仰によって歩んでいます。" />
+      </div>
+      <div class="field span-3">
+        <label for="themeRefInput">聖句箇所</label>
+        <input id="themeRefInput" value="コリント人への手紙第二 5章7節" />
+      </div>
+
+      <div class="field span-3">
+        <label for="sundaySchoolInput">教会学校</label>
+        <input id="sundaySchoolInput" value="9:15" />
+      </div>
+      <div class="field span-3">
+        <label for="worshipInput">主日礼拝</label>
+        <input id="worshipInput" value="10:30" />
+      </div>
+      <div class="field span-6">
+        <label for="prayerMeetingInput">欄外の祈祷会案内</label>
+        <input id="prayerMeetingInput" value="祈祷会（水）　お休み&#10;ともに祈る時間　水・土　20:00-22:00" />
+      </div>
+
+      <div class="button-row span-12">
+        <button class="btn btn-primary" id="loadBtn">スプレッドシートから作成</button>
+        <button class="btn btn-ghost" id="sampleBtn">サンプルデータで確認</button>
+        <button class="btn btn-ghost" id="manualToggleBtn">CSV貼り付け欄を開く</button>
+      </div>
+
+      <div id="manualPanel" class="manual-panel span-12">
+        <div class="toolbar" style="margin: 0; box-shadow: none;">
+          <div class="field span-6"><label for="eventsCsv">行事 CSV（列例: 日付,内容）</label><textarea id="eventsCsv"></textarea></div>
+          <div class="field span-6"><label for="servantsCsv">奉仕者 CSV（列例: 日付,奉仕,名前）</label><textarea id="servantsCsv"></textarea></div>
+          <div class="field span-6"><label for="scripturesCsv">聖書箇所 CSV（列例: 日付,聖書箇所1,聖書箇所2）</label><textarea id="scripturesCsv"></textarea></div>
+          <div class="field span-6"><label for="prayersCsv">祈り対象 CSV（列例: 年,月,対象）</label><textarea id="prayersCsv"></textarea></div>
+          <div class="field span-6"><label for="hymnsCsv">今月の賛美 CSV（列例: 年,月,曲名,番号）</label><textarea id="hymnsCsv"></textarea></div>
+          <div class="button-row span-6"><button class="btn btn-primary" id="manualBuildBtn">貼り付けCSVから作成</button></div>
+        </div>
+      </div>
+    </section>
+
+    <div id="notice" class="notice"></div>
+
+    <section class="workspace">
+      <div class="sheet-preview">
+        <article class="page" id="schedulePage" aria-label="月間予定表プレビュー"></article>
+      </div>
+      <aside class="side-panel">
+        <h2>提案</h2>
+        <ol>
+          <li>HTMLだけで動く静的アプリにすると、URLを開くだけで使えて、印刷からPDF保存できます。</li>
+          <li>スプレッドシートは「リンクを知っている全員が閲覧可」にしておくと自動読込が安定します。</li>
+          <li>表の列名は <code>日付</code> <code>奉仕</code> <code>名前</code> のように日本語で大丈夫です。列順が変わっても見出し名で探します。</li>
+          <li>例外的な役員会や祈祷会は「行事」タブの日付行に入力しておけば、その日の欄に反映されます。</li>
+        </ol>
+      </aside>
     </section>
   </main>
 
   <script>
-    let tokenizer = null;
+    const SHEETS = {
+      events: '行事',
+      servants: '奉仕者',
+      scriptures: '聖書箇所',
+      prayers: '祈り対象',
+      hymns: '今月の賛美'
+    };
+    const MONTHLY_FORMAT_GID = '379191718';
 
-    const sourceText = document.getElementById('sourceText');
-    const customDict = document.getElementById('customDict');
-    const sourceFile = document.getElementById('sourceFile');
-    const dictFile = document.getElementById('dictFile');
-    const outputArea = document.getElementById('outputArea');
-    const generateBtn = document.getElementById('generateBtn');
-    const copyBtn = document.getElementById('copyBtn');
-    const downloadBtn = document.getElementById('downloadBtn');
-    const message = document.getElementById('message');
+    const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
+    const DUTY_ORDER = ['宣教', '配餐', '司会', '奏楽', '受付', '祈祷', '清掃'];
+    const SAMPLE_DATA = {
+      events: [
+        { '日付': '2026/4/5', '内容': '聖餐式\n●祈りと献金' },
+        { '日付': '2026/4/12', '内容': '◆定例役員会' },
+        { '日付': '2026/4/19', '内容': '◆JV' },
+        { '日付': '2026/4/26', '内容': '●宣教区会議(HBC)' }
+      ],
+      servants: [
+        { '日付': '2026/4/5', '奉仕': '宣教', '名前': '田村昭二師' },
+        { '日付': '2026/4/5', '奉仕': '配餐', '名前': '後藤拓人　　中山　悟' },
+        { '日付': '2026/4/5', '奉仕': '司会', '名前': '太田高祥' },
+        { '日付': '2026/4/5', '奉仕': '奏楽', '名前': '後藤祐子　　後藤真澄' },
+        { '日付': '2026/4/5', '奉仕': '受付', '名前': '有賀恵子' },
+        { '日付': '2026/4/5', '奉仕': '祈祷', '名前': '林　孝夫　　松下閑代' },
+        { '日付': '2026/4/12', '奉仕': '宣教', '名前': '阿部貴和師' },
+        { '日付': '2026/4/12', '奉仕': '司会', '名前': '大島明子' },
+        { '日付': '2026/4/12', '奉仕': '奏楽', '名前': '後藤祐子　　後藤万紀子' },
+        { '日付': '2026/4/12', '奉仕': '受付', '名前': '中山　悟' },
+        { '日付': '2026/4/12', '奉仕': '祈祷', '名前': '中尾富子　　牧園美恵子' },
+        { '日付': '2026/4/12', '奉仕': '清掃', '名前': '後藤万・林・松下・山本' }
+      ],
+      scriptures: Array.from({ length: 30 }, (_, i) => ({ '日付': `2026/4/${i + 1}`, '聖書箇所1': `ルカ${7 + Math.floor(i / 2)}:${(i % 2) * 12 + 1}-${(i % 2) * 12 + 12}`, '聖書箇所2': `ヨシュア${i + 1}:1-${Math.min(24, i + 8)}` })),
+      prayers: [{ '年': '2026', '月': '4', '対象': '田中直美Awana宣教師のために' }],
+      hymns: [
+        { '年': '2026', '月': '4', '曲名': 'ただ信ぜよ', '番号': '聖歌424' },
+        { '年': '2026', '月': '4', '曲名': 'わが主', '番号': 'LP7' },
+        { '年': '2026', '月': '4', '曲名': '御手の中で', '番号': 'LP13' }
+      ]
+    };
 
-    const hasKanji = (text) => /[一-龯々〆ヵヶ]/.test(text);
-    const isHiragana = (text) => /^[ぁ-んー]+$/.test(text);
-    const escapeHtml = (text) => text.replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]));
-    const toHiragana = (text) => text.replace(/[ァ-ン]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0x60));
+    const $ = (id) => document.getElementById(id);
+    const state = { data: SAMPLE_DATA };
 
-    function showMessage(text, type = 'success') {
-      message.textContent = text;
-      message.className = `rounded-2xl border px-4 py-3 text-sm font-semibold ${type === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`;
-      message.classList.remove('hidden');
-      window.clearTimeout(showMessage.timer);
-      showMessage.timer = window.setTimeout(() => message.classList.add('hidden'), 3200);
+    function html(text) {
+      return String(text ?? '').replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]));
     }
 
-    function parseCustomDictionary(text) {
-      return text.split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line && !line.startsWith('#'))
-        .map((line) => {
-          const comma = line.match(/^(.+?)[,，]\s*(.+)$/);
-          if (comma) return { word: comma[1].trim(), ruby: comma[2].trim() };
-          const space = line.match(/^(.+?)\s+(.+)$/);
-          if (space) return { word: space[1].trim(), ruby: space[2].trim() };
-          return null;
-        })
-        .filter((entry) => entry && entry.word && entry.ruby)
-        .sort((a, b) => b.word.length - a.word.length);
+    function showNotice(message, type = 'ok') {
+      const notice = $('notice');
+      notice.innerHTML = message;
+      notice.className = `notice show ${type}`;
     }
 
-    function applyCustomDictionary(text, entries) {
-      const segments = [];
-      let plain = '';
-      let index = 0;
+    function normalize(value) {
+      return String(value ?? '').replace(/[\s　:：()（）・/／_-]/g, '').toLowerCase();
+    }
 
-      const flushPlain = () => {
-        if (plain) {
-          segments.push({ type: 'text', value: plain });
-          plain = '';
+    function getValue(row, candidates) {
+      const entries = Object.entries(row || {});
+      for (const key of candidates) {
+        const exact = entries.find(([k]) => k === key);
+        if (exact) return exact[1];
+      }
+      const normalized = candidates.map(normalize);
+      const found = entries.find(([k]) => normalized.includes(normalize(k)) || normalized.some((name) => normalize(k).includes(name)));
+      return found ? found[1] : '';
+    }
+
+    function parseDate(value, year, month) {
+      if (value instanceof Date && !Number.isNaN(value)) return value;
+      const text = String(value ?? '').trim();
+      if (!text) return null;
+      const serial = Number(text);
+      if (!Number.isNaN(serial) && serial > 20000 && serial < 80000) {
+        return new Date(Math.round((serial - 25569) * 86400 * 1000));
+      }
+      let m = text.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+      if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      m = text.match(/(\d{1,2})\D+(\d{1,2})/);
+      if (m) return new Date(year, Number(m[1]) - 1, Number(m[2]));
+      m = text.match(/^(\d{1,2})$/);
+      if (m) return new Date(year, month - 1, Number(m[1]));
+      return null;
+    }
+
+    function sameMonth(date, year, month) {
+      return date && date.getFullYear() === year && date.getMonth() === month - 1;
+    }
+
+    function dateKey(date) {
+      return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+    }
+
+    function parseCsv(text) {
+      const rows = [];
+      let row = [], cell = '', quote = false;
+      for (let i = 0; i < text.length; i += 1) {
+        const c = text[i], n = text[i + 1];
+        if (c === '"' && quote && n === '"') { cell += '"'; i += 1; continue; }
+        if (c === '"') { quote = !quote; continue; }
+        if (c === ',' && !quote) { row.push(cell); cell = ''; continue; }
+        if ((c === '\n' || c === '\r') && !quote) {
+          if (c === '\r' && n === '\n') i += 1;
+          row.push(cell); rows.push(row); row = []; cell = ''; continue;
         }
+        cell += c;
+      }
+      row.push(cell); rows.push(row);
+      const clean = rows.map((r) => r.map((v) => v.trim())).filter((r) => r.some(Boolean));
+      if (!clean.length) return [];
+      const headers = clean[0];
+      return clean.slice(1).map((r) => Object.fromEntries(headers.map((h, i) => [h || `列${i + 1}`, r[i] || ''])));
+    }
+
+    function gvizToRows(jsonText) {
+      const json = JSON.parse(jsonText.replace(/^.*?setResponse\(/s, '').replace(/\);?\s*$/s, ''));
+      const tableRows = json.table?.rows || [];
+      const raw = tableRows.map((row) => (row.c || []).map((cell) => cell?.f ?? cell?.v ?? ''));
+      const headerIndex = raw.findIndex((r) => r.filter(Boolean).length >= 2);
+      if (headerIndex < 0) return [];
+      const headers = raw[headerIndex].map((v, i) => String(v || `列${i + 1}`).trim());
+      return raw.slice(headerIndex + 1)
+        .filter((r) => r.some((v) => String(v).trim()))
+        .map((r) => Object.fromEntries(headers.map((h, i) => [h, r[i] ?? ''])));
+    }
+
+
+    function fetchSheetMatrixByGid(sheetId, gid) {
+      return new Promise((resolve, reject) => {
+        const callback = `sheetMatrixCallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        const script = document.createElement('script');
+        const cleanup = () => { delete window[callback]; script.remove(); };
+        const timer = window.setTimeout(() => { cleanup(); reject(new Error(`gid=${gid}の読込がタイムアウトしました`)); }, 12000);
+        window[callback] = (response) => {
+          window.clearTimeout(timer);
+          cleanup();
+          if (response.status === 'error') {
+            reject(new Error(response.errors?.map((e) => e.detailed_message || e.message).join(' / ') || `gid=${gid}の読込に失敗しました`));
+            return;
+          }
+          resolve((response.table?.rows || []).map((row) => (row.c || []).map((cell) => cell?.f ?? cell?.v ?? '')));
+        };
+        script.onerror = () => { window.clearTimeout(timer); cleanup(); reject(new Error(`gid=${gid}を読み込めません。共有設定を確認してください。`)); };
+        script.src = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/gviz/tq?gid=${encodeURIComponent(gid)}&tqx=responseHandler:${callback}`;
+        document.body.appendChild(script);
+      });
+    }
+
+    function extractHymnsFromMatrix(matrix, year, month) {
+      const hymns = [];
+      for (let r = 0; r < matrix.length; r += 1) {
+        for (let c = 0; c < (matrix[r] || []).length; c += 1) {
+          if (!String(matrix[r][c] || '').includes('今月の賛美')) continue;
+          for (let i = 1; i <= 5; i += 1) {
+            const row = matrix[r + i] || [];
+            const cells = row.slice(c, c + 6).map((v) => String(v || '').trim()).filter(Boolean);
+            if (!cells.length || cells.some((v) => v.includes('テーマ聖句'))) continue;
+            const joined = cells.join(' ');
+            const numberMatch = joined.match(/(聖歌\s*\d+|讃美歌\s*\d+|新聖歌\s*\d+|LP\s*\d+)/i);
+            const number = numberMatch ? numberMatch[1].replace(/\s+/g, '') : (cells.length > 1 ? cells[cells.length - 1] : '');
+            const title = numberMatch ? joined.replace(numberMatch[0], '').trim() : cells.slice(0, Math.max(1, cells.length - 1)).join(' ');
+            if (title) hymns.push({ '年': String(year), '月': String(month), '曲名': title, '番号': number });
+            if (hymns.length >= 3) return hymns;
+          }
+        }
+      }
+      return hymns;
+    }
+
+    function fetchSheetRows(sheetId, sheetName) {
+      return new Promise((resolve, reject) => {
+        const callback = `sheetCallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        const script = document.createElement('script');
+        const cleanup = () => { delete window[callback]; script.remove(); };
+        const timer = window.setTimeout(() => { cleanup(); reject(new Error(`${sheetName}の読込がタイムアウトしました`)); }, 12000);
+        window[callback] = (response) => {
+          window.clearTimeout(timer);
+          cleanup();
+          if (response.status === 'error') {
+            reject(new Error(response.errors?.map((e) => e.detailed_message || e.message).join(' / ') || `${sheetName}の読込に失敗しました`));
+            return;
+          }
+          const rows = (response.table?.rows || []).map((row) => (row.c || []).map((cell) => cell?.f ?? cell?.v ?? ''));
+          const headerIndex = rows.findIndex((r) => r.filter(Boolean).length >= 2);
+          if (headerIndex < 0) { resolve([]); return; }
+          const headers = rows[headerIndex].map((v, i) => String(v || `列${i + 1}`).trim());
+          resolve(rows.slice(headerIndex + 1)
+            .filter((r) => r.some((v) => String(v).trim()))
+            .map((r) => Object.fromEntries(headers.map((h, i) => [h, r[i] ?? '']))));
+        };
+        script.onerror = () => { window.clearTimeout(timer); cleanup(); reject(new Error(`${sheetName}を読み込めません。共有設定を確認してください。`)); };
+        script.src = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/gviz/tq?sheet=${encodeURIComponent(sheetName)}&tqx=responseHandler:${callback}`;
+        document.body.appendChild(script);
+      });
+    }
+
+    async function loadFromSheets() {
+      const sheetId = $('sheetIdInput').value.trim();
+      if (!sheetId) throw new Error('スプレッドシートIDを入力してください。');
+      const pairs = await Promise.allSettled(Object.entries(SHEETS).map(async ([key, name]) => [key, await fetchSheetRows(sheetId, name)]));
+      const monthlyMatrix = await fetchSheetMatrixByGid(sheetId, MONTHLY_FORMAT_GID).catch((error) => ({ error }));
+      const data = { events: [], servants: [], scriptures: [], prayers: [], hymns: [] };
+      const errors = [];
+      for (const result of pairs) {
+        if (result.status === 'fulfilled') data[result.value[0]] = result.value[1];
+        else errors.push(result.reason.message);
+      }
+      if (Array.isArray(monthlyMatrix)) {
+        const extractedHymns = extractHymnsFromMatrix(monthlyMatrix, Number($('yearInput').value), Number($('monthInput').value));
+        if (extractedHymns.length) data.hymns = extractedHymns.concat(data.hymns);
+      } else if (monthlyMatrix.error) {
+        errors.push(monthlyMatrix.error.message);
+      }
+      state.data = data;
+      return errors;
+    }
+
+    function buildManualData() {
+      state.data = {
+        events: parseCsv($('eventsCsv').value),
+        servants: parseCsv($('servantsCsv').value),
+        scriptures: parseCsv($('scripturesCsv').value),
+        prayers: parseCsv($('prayersCsv').value),
+        hymns: parseCsv($('hymnsCsv').value)
       };
+    }
 
-      while (index < text.length) {
-        const found = entries.find((entry) => text.startsWith(entry.word, index));
-        if (found) {
-          flushPlain();
-          segments.push({ type: 'html', value: `<ruby>${escapeHtml(found.word)}<rt>${escapeHtml(found.ruby)}</rt></ruby>` });
-          index += found.word.length;
-        } else {
-          plain += text[index];
-          index += 1;
+    function rowsForMonth(rows, year, month) {
+      return (rows || []).filter((row) => {
+        const date = parseDate(getValue(row, ['日付', '年月日', '月日', '日']), year, month);
+        if (sameMonth(date, year, month)) return true;
+        const y = Number(getValue(row, ['年', '年度', 'Year']));
+        const m = Number(getValue(row, ['月', 'Month']));
+        return (!y || y === year) && (!m || m === month);
+      });
+    }
+
+    function collectHymns(year, month) {
+      const rows = rowsForMonth(state.data.hymns, year, month);
+      const hymns = [];
+      for (const row of rows) {
+        const title = getValue(row, ['曲名', '賛美', '歌', 'タイトル', '1曲目', '一曲目']);
+        const number = getValue(row, ['番号', '曲番号', '聖歌', 'LP', '楽譜']);
+        if (title) hymns.push({ title, number });
+        for (let i = 1; i <= 3; i += 1) {
+          const t = getValue(row, [`曲名${i}`, `${i}曲目`, `賛美${i}`]);
+          const n = getValue(row, [`番号${i}`, `曲番号${i}`]);
+          if (t) hymns.push({ title: t, number: n });
         }
       }
-      flushPlain();
-      return segments;
+      return hymns.slice(0, 3);
     }
 
-    function rubyForToken(token) {
-      const surface = token.surface_form || '';
-      if (!surface || !hasKanji(surface)) return escapeHtml(surface);
+    function collectPrayerTarget(year, month) {
+      const row = rowsForMonth(state.data.prayers, year, month)[0];
+      return row ? getValue(row, ['祈り対象', '対象', '祈祷対象', '内容', '名前']) : '';
+    }
 
-      const rawReading = token.reading && token.reading !== '*' ? token.reading : '';
-      const reading = toHiragana(rawReading);
-      if (!reading) return escapeHtml(surface);
+    function collectByDate(rows, year, month, extractor) {
+      const map = new Map();
+      for (const row of rows || []) {
+        const date = parseDate(getValue(row, ['日付', '年月日', '月日', '日']), year, month);
+        if (!sameMonth(date, year, month)) continue;
+        const key = dateKey(date);
+        const value = extractor(row, date);
+        if (!value) continue;
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(value);
+      }
+      return map;
+    }
 
-      const trailingKana = surface.match(/[ぁ-んー]+$/)?.[0] || '';
-      if (trailingKana && reading.endsWith(trailingKana)) {
-        const base = surface.slice(0, -trailingKana.length);
-        const baseReading = reading.slice(0, -trailingKana.length);
-        if (base && baseReading && hasKanji(base)) {
-          return `<ruby>${escapeHtml(base)}<rt>${escapeHtml(baseReading)}</rt></ruby>${escapeHtml(trailingKana)}`;
+    function prepareCalendar(year, month) {
+      const prayerTarget = collectPrayerTarget(year, month);
+      const events = collectByDate(state.data.events, year, month, (row) => {
+        const title = getValue(row, ['内容', '行事', '予定', 'イベント', '名称', 'タイトル']);
+        const time = getValue(row, ['時間', '開始時間']);
+        return [time, title].filter(Boolean).join(' ');
+      });
+
+      const servants = new Map();
+      for (const row of state.data.servants || []) {
+        const date = parseDate(getValue(row, ['日付', '年月日', '月日', '日']), year, month);
+        if (!sameMonth(date, year, month)) continue;
+        const role = getValue(row, ['奉仕', '奉仕内容', '係', '役割']);
+        const name = getValue(row, ['名前', '氏名', '奉仕者', '担当者']);
+        if (!role || !name) continue;
+        const key = dateKey(date);
+        if (!servants.has(key)) servants.set(key, {});
+        servants.get(key)[role] = servants.get(key)[role] ? `${servants.get(key)[role]}　　${name}` : name;
+      }
+
+      const scriptures = collectByDate(state.data.scriptures, year, month, (row) => {
+        const one = getValue(row, ['聖書箇所1', '箇所1', '旧約', '第一箇所']);
+        const two = getValue(row, ['聖書箇所2', '箇所2', '新約', '第二箇所']);
+        const joined = getValue(row, ['聖書箇所', '通読箇所', '箇所']);
+        return [one, two].filter(Boolean).join('\n') || String(joined || '').replace(/[／/、,，]/g, '\n');
+      });
+
+      if (prayerTarget) {
+        const firstSunday = Array.from({ length: 7 }, (_, i) => new Date(year, month - 1, i + 1)).find((d) => d.getDay() === 0);
+        if (firstSunday) {
+          const key = dateKey(firstSunday);
+          if (!events.has(key)) events.set(key, []);
+          const list = events.get(key);
+          const hasPrayer = list.some((v) => String(v).includes('祈りと献金'));
+          if (!hasPrayer) list.unshift(`●祈りと献金（${prayerTarget}）`);
+          else events.set(key, list.map((v) => String(v).includes('祈りと献金') && !String(v).includes('（') ? `${v}（${prayerTarget}）` : v));
         }
       }
 
-      return `<ruby>${escapeHtml(surface)}<rt>${escapeHtml(reading)}</rt></ruby>`;
+      return { events, servants, scriptures, hymns: collectHymns(year, month) };
     }
 
-    function autoRubyText(text) {
-      if (!text) return '';
-      return tokenizer.tokenize(text).map(rubyForToken).join('');
+    function daysInMonth(year, month) {
+      return new Date(year, month, 0).getDate();
     }
 
-    function renderWithRuby(text, dictText) {
-      const entries = parseCustomDictionary(dictText);
-      const customApplied = applyCustomDictionary(text, entries);
-      return customApplied.map((segment) => {
-        if (segment.type === 'html') return segment.value;
-        return autoRubyText(segment.value);
-      }).join('').replace(/\r?\n/g, '<br>');
-    }
-
-    async function readFileAsText(file) {
-      const ext = file.name.split('.').pop().toLowerCase();
-      if (ext === 'docx') {
-        const arrayBuffer = await file.arrayBuffer();
-        const result = await mammoth.extractRawText({ arrayBuffer });
-        return result.value || '';
+    function getWeeks(year, month) {
+      const total = daysInMonth(year, month);
+      const sundays = [];
+      for (let d = 1; d <= total; d += 1) {
+        const date = new Date(year, month - 1, d);
+        if (date.getDay() === 0) sundays.push(date);
       }
-      return await file.text();
+      const weeks = [];
+      const firstSundayDay = sundays[0]?.getDate() || total + 1;
+      if (firstSundayDay > 1) weeks.push({ sunday: null, weekdays: rangeDates(year, month, 1, firstSundayDay - 1) });
+      sundays.forEach((sunday, index) => {
+        const start = sunday.getDate() + 1;
+        const end = index + 1 < sundays.length ? sundays[index + 1].getDate() - 1 : total;
+        weeks.push({ sunday, weekdays: rangeDates(year, month, start, end) });
+      });
+      return weeks;
     }
 
-    sourceFile.addEventListener('change', async (event) => {
-      const file = event.target.files[0];
-      if (!file) return;
-      try {
-        sourceText.value = await readFileAsText(file);
-        showMessage(`「${file.name}」を入力エリアに読み込みました。`);
-      } catch (error) {
-        showMessage('ファイルの読み込みに失敗しました。対応形式を確認してください。', 'error');
-      } finally {
-        event.target.value = '';
-      }
-    });
+    function rangeDates(year, month, start, end) {
+      const list = [];
+      for (let d = start; d <= end; d += 1) list.push(new Date(year, month - 1, d));
+      return list;
+    }
 
-    dictFile.addEventListener('change', async (event) => {
-      const file = event.target.files[0];
-      if (!file) return;
-      try {
-        const text = await readFileAsText(file);
-        customDict.value += `${customDict.value.trim() ? '\n' : ''}${text.trim()}`;
-        showMessage(`「${file.name}」をカスタム辞書に追記しました。`);
-      } catch (error) {
-        showMessage('辞書ファイルの読み込みに失敗しました。対応形式を確認してください。', 'error');
-      } finally {
-        event.target.value = '';
-      }
-    });
-
-    generateBtn.addEventListener('click', () => {
-      if (!tokenizer) {
-        showMessage('Kuromoji辞書の読み込みがまだ完了していません。', 'error');
+    function render() {
+      const year = Number($('yearInput').value);
+      const month = Number($('monthInput').value);
+      const page = $('schedulePage');
+      if (!year || !month || month < 1 || month > 12) {
+        showNotice('年と月を正しく入力してください。', 'error');
         return;
       }
-      generateBtn.disabled = true;
-      generateBtn.textContent = '処理中...';
-      window.setTimeout(() => {
-        try {
-          outputArea.innerHTML = renderWithRuby(sourceText.value, customDict.value);
-          showMessage('ふりがなを付与しました。出力エリアで直接編集できます。');
-        } catch (error) {
-          console.error(error);
-          showMessage('ルビ付与処理中にエラーが発生しました。', 'error');
-        } finally {
-          generateBtn.disabled = false;
-          generateBtn.textContent = 'ふりがなを付ける';
-        }
-      }, 20);
-    });
+      const model = prepareCalendar(year, month);
+      const weeks = getWeeks(year, month);
+      const hymns = model.hymns.length ? model.hymns : [{ title: '', number: '' }, { title: '', number: '' }, { title: '', number: '' }];
 
-    copyBtn.addEventListener('click', () => {
-      const range = document.createRange();
-      range.selectNodeContents(outputArea);
-      const selection = window.getSelection();
-      selection.removeAllRanges();
-      selection.addRange(range);
-      const ok = document.execCommand('copy');
-      selection.removeAllRanges();
-      showMessage(ok ? 'リッチテキストとしてコピーしました。Wordに貼り付けできます。' : 'コピーに失敗しました。', ok ? 'success' : 'error');
-    });
+      page.innerHTML = `
+        <header>
+          <div class="calendar-title"><strong>${year}年　${month}月</strong><span>${html($('churchNameInput').value)}</span></div>
+          <div class="theme-row">
+            <div class="hymn-box">
+              <div class="hymn-title">今月の賛美</div>
+              ${hymns.map((h) => `<div class="hymn-item"><span>${html(h.title || '　')}</span><span>${html(h.number || '　')}</span></div>`).join('')}
+            </div>
+            <div class="theme-text">
+              <div>${html($('themeTitleInput').value)}</div>
+              <div>${html($('themeTextInput').value)}</div>
+              <div class="verse">${html($('themeRefInput').value)}</div>
+            </div>
+          </div>
+          <div class="service-note"><span>◆日曜日</span><span>教会学校 ${html($('sundaySchoolInput').value)}</span><span>主日礼拝 ${html($('worshipInput').value)}</span></div>
+        </header>
+        <section class="month-grid">
+          ${weeks.map((week) => renderWeek(week, model)).join('')}
+        </section>
+        <footer class="footer-notes">
+          <div></div><div>${html($('prayerMeetingInput').value).replace(/\n/g, '<br>')}</div>
+        </footer>
+      `;
+    }
 
-    downloadBtn.addEventListener('click', () => {
-      const bodyHtml = outputArea.innerHTML || '';
-      const docHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>ルビ付き文書</title><style>body{font-family:"Yu Gothic",Meiryo,sans-serif;line-height:2;}rt{font-size:0.55em;color:#2563eb;}</style></head><body>${bodyHtml}</body></html>`;
-      const blob = new Blob(['\ufeff', docHtml], { type: 'application/msword' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `ruby-document-${new Date().toISOString().slice(0, 10)}.doc`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      showMessage('Wordで開ける .doc ファイルを保存しました。');
-    });
+    function renderWeek(week, model) {
+      const sundayHtml = week.sunday ? renderSunday(week.sunday, model) : '<div class="week-left"></div>';
+      const weekdaysHtml = `<div class="week-right">${week.weekdays.map((date) => renderWeekday(date, model)).join('')}</div>`;
+      return `${sundayHtml}${weekdaysHtml}`;
+    }
 
-    kuromoji.builder({ dicPath: 'https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/' }).build((error, builtTokenizer) => {
-      if (error) {
-        document.getElementById('loadingScreen').innerHTML = '<div class="rounded-3xl border border-red-200 bg-red-50 p-8 text-center text-red-700"><h1 class="text-xl font-bold">辞書の読み込みに失敗しました</h1><p class="mt-2 text-sm">ネットワーク接続を確認して再読み込みしてください。</p></div>';
-        console.error(error);
-        return;
+    function renderSunday(date, model) {
+      const key = dateKey(date);
+      const eventText = (model.events.get(key) || []).join('　　');
+      const duties = model.servants.get(key) || {};
+      return `<div class="week-left">
+        <div class="sunday-head"><span class="date">${date.getDate()} 日</span><span class="sunday-events">${html(eventText)}</span></div>
+        <div class="duties">
+          ${DUTY_ORDER.map((role) => `<div class="duty-row"><span class="duty-label">${role}</span><span class="names">${html(duties[role] || '')}</span></div>`).join('')}
+        </div>
+      </div>`;
+    }
+
+    function renderWeekday(date, model) {
+      const key = dateKey(date);
+      const events = (model.events.get(key) || []).join('\n');
+      const scripture = (model.scriptures.get(key) || []).join('\n');
+      return `<div class="weekday-row">
+        <div class="day-cell">${date.getDate()} ${WEEKDAYS[date.getDay()]}</div>
+        <div class="event-cell">${html(events)}</div>
+        <div class="scripture-cell">${html(scripture)}</div>
+      </div>`;
+    }
+
+    $('loadBtn').addEventListener('click', async () => {
+      $('loadBtn').disabled = true;
+      $('loadBtn').textContent = '読込中...';
+      try {
+        const errors = await loadFromSheets();
+        render();
+        if (errors.length) showNotice(`一部のタブを読み込めませんでした。共有設定またはタブ名を確認してください。<br>${html(errors.join('\n')).replace(/\n/g, '<br>')}`, 'warn');
+        else showNotice('スプレッドシートから予定表を作成しました。', 'ok');
+      } catch (error) {
+        showNotice(html(error.message), 'error');
+      } finally {
+        $('loadBtn').disabled = false;
+        $('loadBtn').textContent = 'スプレッドシートから作成';
       }
-      tokenizer = builtTokenizer;
-      document.getElementById('loadingScreen').classList.add('hidden');
-      document.getElementById('app').classList.remove('hidden');
     });
+
+    $('sampleBtn').addEventListener('click', () => {
+      state.data = SAMPLE_DATA;
+      render();
+      showNotice('サンプルデータで予定表を作成しました。', 'ok');
+    });
+
+    $('manualToggleBtn').addEventListener('click', () => {
+      $('manualPanel').classList.toggle('open');
+      $('manualToggleBtn').textContent = $('manualPanel').classList.contains('open') ? 'CSV貼り付け欄を閉じる' : 'CSV貼り付け欄を開く';
+    });
+
+    $('manualBuildBtn').addEventListener('click', () => {
+      buildManualData();
+      render();
+      showNotice('貼り付けCSVから予定表を作成しました。', 'ok');
+    });
+
+    $('printBtn').addEventListener('click', () => window.print());
+    ['yearInput', 'monthInput', 'churchNameInput', 'themeTitleInput', 'themeTextInput', 'themeRefInput', 'sundaySchoolInput', 'worshipInput', 'prayerMeetingInput'].forEach((id) => $(id).addEventListener('input', render));
+
+    render();
   </script>
 </body>
 </html>
